@@ -50,6 +50,13 @@
 
 (defn ct [] @current-thread)
 
+(defonce current-frame (atom nil))
+
+(defn set-current-frame [frame]
+  (reset! current-frame frame))
+
+(defn cf [] @current-frame)
+
 (defn list-threads []
   (.allThreads (vm)))
 
@@ -120,3 +127,28 @@
     (.deleteEventRequest (.eventRequestManager (vm)) catch-request)
     (swap! catch-list dissoc class)))
 
+(defn create-remote-str [ & s]
+  (.mirrorOf (vm) (apply str s)))
+
+(defn make-arg-list [ & args]
+  (ArrayList. args))
+
+(defn remote-invoke [class method arglist thread frame]
+  (.invokeMethod class thread method arglist frame))
+
+(def remote-eval (partial remote-invoke (co) (ev)))
+
+(def remote-read-string (partial remote-invoke (rt) (rstring)))
+
+(defmacro reval
+  ([form]
+     `(reval ~form (ct)))
+  ([form thread]
+     `(reval ~form ~thread (cf)))
+  ([form thread frame]
+     `(-> (create-remote-str "(with-out-str (pr (eval " '~form ")))")
+          make-arg-list
+          (remote-read-string ~thread ~frame )
+          make-arg-list
+          (remote-eval ~thread ~frame)
+          str println)))
