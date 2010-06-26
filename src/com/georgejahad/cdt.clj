@@ -39,7 +39,7 @@
 
 (def co (memoize (fn [] (first (find-classes #"clojure.lang.Compiler")))))
 
-(def rstring (memoize (fn [] (first (find-methods  (rt) #"readString")))))
+(def rstring (memoize (fn [] (first (find-methods (rt) #"readString")))))
 
 (def ev (memoize (fn [] (first (find-methods (co) #"eval")))))
 
@@ -55,6 +55,10 @@
 
 (defn print-threads []
   (pprint (seq (list-threads))))
+
+(defn print-frames
+  ([] (print-frames (ct)))
+  ([thread] (pprint (seq (.frames thread)))))
 
 (defrecord BpSpec [sym methods bps])
 
@@ -72,7 +76,7 @@
 
 (defn gen-class-pattern [sym]
   (let [s (str2/replace (str sym) "/" "\\$")]
-    (re-pattern (str "^" s "__\\d*$"))))
+    (re-pattern (str "^" s "$"))))
 
 (defn get-methods [sym]
   (for [c (find-classes (gen-class-pattern sym))
@@ -92,7 +96,27 @@
      `(set-bp-fn '~sym '~short-name)))
 
 (defn delete-bp [short-name]
-  (debug-repl)
   (doseq [bp (:bps (short-name @bp-list))]
+    (.setEnabled bp false)
     (.deleteEventRequest (.eventRequestManager (vm)) bp))
   (swap! bp-list dissoc short-name))
+
+(defonce catch-list (atom {}))
+
+(defn set-catch [class type]
+  (let [caught (boolean (#{:all :caught} type))
+        uncaught (boolean (#{:all :uncaught} type))
+        pattern (re-pattern (second (.split (str class) " " )))
+        ref-type (first (find-classes pattern))
+        catch-request
+        (doto (.createExceptionRequest (.eventRequestManager (vm))
+                                       ref-type caught uncaught)
+          (.setEnabled true))]
+    (swap! catch-list assoc class catch-request)))
+
+(defn delete-catch [class]
+  (let [catch-request (@catch-list class)]
+    (.setEnabled catch-request false)
+    (.deleteEventRequest (.eventRequestManager (vm)) catch-request)
+    (swap! catch-list dissoc class)))
+
