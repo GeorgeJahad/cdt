@@ -127,18 +127,26 @@
     (.deleteEventRequest (.eventRequestManager (vm)) catch-request)
     (swap! catch-list dissoc class)))
 
-(defn create-remote-str [ & s]
-  (.mirrorOf (vm) (apply str s)))
+(defmacro remote-create-str [form]
+  `(.mirrorOf (vm) (str '~form)))
 
 (defn make-arg-list [ & args]
   (ArrayList. args))
 
-(defn remote-invoke [class method arglist thread frame]
-  (.invokeMethod class thread method arglist frame))
+(defn remote-invoke [class-fn method-fn arglist thread frame]
+  (.invokeMethod (class-fn) thread (method-fn) arglist frame))
 
-(def remote-eval (partial remote-invoke (co) (ev)))
+(def remote-eval (partial remote-invoke co ev))
 
-(def remote-read-string (partial remote-invoke (rt) (rstring)))
+(def remote-read-string (partial remote-invoke rt rstring))
+
+(defn reval* [form thread frame]
+  `(-> (remote-create-str `(with-out-str (pr (eval '~form))))
+       make-arg-list
+       (remote-read-string ~thread ~frame )
+       make-arg-list
+       (remote-eval ~thread ~frame)
+       str println))
 
 (defmacro reval
   ([form]
@@ -146,7 +154,7 @@
   ([form thread]
      `(reval ~form ~thread (cf)))
   ([form thread frame]
-     `(-> (create-remote-str "(with-out-str (pr (eval " '~form ")))")
+     `(-> (remote-create-str (with-out-str (pr (eval '~form))))
           make-arg-list
           (remote-read-string ~thread ~frame )
           make-arg-list
