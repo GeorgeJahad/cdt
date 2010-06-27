@@ -186,18 +186,15 @@
         ]
     `(let ~(gen-local-bindings sym locals) ~form)))
 
-(defn gen-form [form]
-  )
-
 (defn gen-form [form return-str?]
   (if return-str?
     `(with-out-str (pr (eval '~form)))
     `(eval '~form)))
 
 (defn reval-ret*
-  [return-str? form locals]
-  (let [form (if-not locals form
-                     (gen-form-with-locals form (ct) (cf)))]
+  [return-str? form locals?]
+  (let [form (if-not locals? form
+                     (gen-form-with-locals form))]
     (-> (remote-create-str (gen-form form return-str?))
         make-arg-list
         (remote-read-string (ct) (cf))
@@ -209,12 +206,12 @@
 
 (defmacro reval-ret
   ([form]
-     `(reval-ret ~form false))
-  ([form locals]
-     `(reval-ret-str '~form ~locals)))
+     `(reval-ret ~form true))
+  ([form locals?]
+     `(reval-ret-str '~form ~locals?)))
 
 (defmacro reval
   ([form]
-     `(reval ~form false))
-  ([form locals]
-     `(println (str (reval-ret-str '~form ~locals)))))
+     `(reval ~form true))
+  ([form locals?]
+     `(println (str (reval-ret-str '~form ~locals?)))))
