@@ -140,13 +140,33 @@
 
 (def remote-read-string (partial remote-invoke rt rstring))
 
-(defn reval* [form thread frame]
-  `(-> (remote-create-str `(with-out-str (pr (eval '~form))))
-       make-arg-list
-       (remote-read-string ~thread ~frame )
-       make-arg-list
-       (remote-eval ~thread ~frame)
-       str println))
+(defn gen-form-with-locals [form thread frame]
+  (let [sym (reval-ret (gensym "cdt-") thread frame)]
+    
+    `(do
+       (reval (do (ns ~sym)
+))
+       )))
+
+(defn reval-ret* [form thread frame locals]
+  (let [form (if-not locals form
+               (gen-form-with-locals form thread frame))]
+    `(-> (remote-create-str (with-out-str (pr (eval '~form))))
+         make-arg-list
+         (remote-read-string ~thread ~frame )
+         make-arg-list
+         (remote-eval ~thread ~frame)
+         str)))
+
+(defmacro reval-ret
+  ([form]
+     `(reval-ret ~form (ct)))
+  ([form thread]
+     `(reval-ret ~form ~thread (cf)))
+  ([form thread frame]
+     `(reval-ret ~form ~thread ~frame false))
+  ([form thread frame locals]
+     (reval-ret* form thread frame locals)))
 
 (defmacro reval
   ([form]
@@ -154,9 +174,6 @@
   ([form thread]
      `(reval ~form ~thread (cf)))
   ([form thread frame]
-     `(-> (remote-create-str (with-out-str (pr (eval '~form))))
-          make-arg-list
-          (remote-read-string ~thread ~frame )
-          make-arg-list
-          (remote-eval ~thread ~frame)
-          str println)))
+     `(reval ~form ~thread ~frame false))
+  ([form thread frame locals]
+     `(println ~(reval-ret* form thread frame locals))))
