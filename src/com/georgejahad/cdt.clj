@@ -168,19 +168,23 @@
         locals (.getValues frame (.visibleVariables frame))
         new-map (reduce add-local-to-map (remote-get v) locals)]
     (remote-swap-root v (make-arg-list new-map))
-    (count locals)))
+    locals))
 
-(defn gen-local-bindings [sym num]
-  `[])
+(defn gen-local-bindings [sym locals]
+  (into [] (mapcat
+            (fn [l]
+              (let [local-name (.name (key l))]
+                `[~(symbol local-name)
+                  ((var-get (ns-resolve '~'user '~sym)) ~local-name)]))
+            locals)))
 
 (defn gen-form-with-locals [form]
   (let [sym (symbol (read-string (str (reval-ret-str `(gensym "cdt-") false))))
         _ (reval-ret-str '(ns user) false)
         v (reval-ret-obj `(def ~sym {}) false)
-        num (add-locals-to-map v)
+        locals (add-locals-to-map v)
         ]
-
-    `(let ~(gen-local-bindings sym num) ~form)))
+    `(let ~(gen-local-bindings sym locals) ~form)))
 
 (defn gen-form [form]
   )
