@@ -182,8 +182,7 @@
   (let [sym (symbol (read-string (str (reval-ret-str `(gensym "cdt-") false))))
         _ (reval-ret-str '(ns user) false)
         v (reval-ret-obj `(def ~sym {}) false)
-        locals (add-locals-to-map v)
-        ]
+        locals (add-locals-to-map v)]
     `(let ~(gen-local-bindings sym locals) ~form)))
 
 (defn gen-form [form return-str?]
@@ -204,14 +203,8 @@
 (def reval-ret-str (partial reval-ret* true))
 (def reval-ret-obj (partial reval-ret* false))
 
-(defmacro reval-ret
-  ([form]
-     `(reval-ret ~form true))
-  ([form locals?]
-     `(reval-ret-str '~form ~locals?)))
-
 (defmacro reval
   ([form]
      `(reval ~form true))
   ([form locals?]
-     `(println (str (reval-ret-str '~form ~locals?)))))
+     `(read-string (read-string (str (reval-ret-str '~form ~locals?))))))
