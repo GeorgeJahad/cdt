@@ -39,9 +39,17 @@
 
 (def co (memoize (fn [] (first (find-classes #"clojure.lang.Compiler")))))
 
+(def va (memoize (fn [] (first (find-classes #"clojure.lang.Var")))))
+
 (def rstring (memoize (fn [] (first (find-methods (rt) #"readString")))))
 
+(def as (memoize (fn [] (first (find-methods (rt) #"assoc")))))
+
 (def ev (memoize (fn [] (first (find-methods (co) #"eval")))))
+
+(def ge (memoize (fn [] (first (find-methods (va) #"get")))))
+
+(def sroot (memoize (fn [] (first (find-methods (va) #"swapRoot")))))
 
 (defonce current-thread (atom nil))
 
@@ -50,7 +58,7 @@
 
 (defn ct [] @current-thread)
 
-(defonce current-frame (atom nil))
+(defonce current-frame (atom 0))
 
 (defn set-current-frame [frame]
   (reset! current-frame frame))
@@ -131,7 +139,7 @@
   (.mirrorOf (vm) (str form)))
 
 (defn make-arg-list [ & args]
-  (ArrayList. args))
+  (ArrayList. (or args [])))
 
 (defn remote-invoke [class-fn method-fn arglist thread frame]
   (.invokeMethod (class-fn) thread (method-fn) arglist frame))
@@ -140,37 +148,69 @@
 
 (def remote-read-string (partial remote-invoke rt rstring))
 
-(declare gen-form-with-locals reval-ret*)
+(def remote-assoc (partial remote-invoke rt as))
 
+(defn remote-get [v]
+  (remote-invoke (constantly v) ge (make-arg-list) (ct) (cf)))
+
+(defn remote-swap-root [v arg-list]
+  (remote-invoke (constantly v) sroot arg-list (ct) (cf)))
+
+(declare  reval-ret* reval-ret-str reval-ret-obj)
+
+(defn add-local-to-map [m l]
+  (remote-assoc
+   (make-arg-list m
+                  (remote-create-str (.name (key l))) (val l)) (ct) (cf)))
+
+(defn add-locals-to-map [v]
+  (let [frame (.frame (ct) (cf))
+        locals (.getValues frame (.visibleVariables frame))
+        new-map (reduce add-local-to-map (remote-get v) locals)]
+    (remote-swap-root v (make-arg-list new-map))
+    (count locals)))
+
+(defn gen-local-bindings [sym num]
+  `[])
 
 (defn gen-form-with-locals [form]
-  (let [sym (symbol (read-string (reval-ret (gensym "cdt-"))))]
-    (reval-ret* `(do (ns user)
-                     (def ~sym {})) false)
-    `(let [~sym 1] ~form)))
+  (let [sym (symbol (read-string (str (reval-ret-str `(gensym "cdt-") false))))
+        _ (reval-ret-str '(ns user) false)
+        v (reval-ret-obj `(def ~sym {}) false)
+        num (add-locals-to-map v)
+        ]
+
+    `(let ~(gen-local-bindings sym num) ~form)))
 
 (defn gen-form [form]
-  `(with-out-str (pr (eval '~form))))
+  )
+
+(defn gen-form [form return-str?]
+  (if return-str?
+    `(with-out-str (pr (eval '~form)))
+    `(eval '~form)))
 
 (defn reval-ret*
-  [form locals]
+  [return-str? form locals]
   (let [form (if-not locals form
                      (gen-form-with-locals form (ct) (cf)))]
-    (-> (remote-create-str (gen-form form))
+    (-> (remote-create-str (gen-form form return-str?))
         make-arg-list
         (remote-read-string (ct) (cf))
         make-arg-list
-        (remote-eval (ct) (cf))
-        str)))
+        (remote-eval (ct) (cf)))))
+
+(def reval-ret-str (partial reval-ret* true))
+(def reval-ret-obj (partial reval-ret* false))
 
 (defmacro reval-ret
   ([form]
      `(reval-ret ~form false))
   ([form locals]
-     `(reval-ret* '~form ~locals)))
+     `(reval-ret-str '~form ~locals)))
 
 (defmacro reval
   ([form]
      `(reval ~form false))
   ([form locals]
-     `(println (reval-ret* '~form ~locals))))
+     `(println (str (reval-ret-str '~form ~locals)))))
