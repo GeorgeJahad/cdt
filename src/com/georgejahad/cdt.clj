@@ -127,8 +127,8 @@
     (.deleteEventRequest (.eventRequestManager (vm)) catch-request)
     (swap! catch-list dissoc class)))
 
-(defmacro remote-create-str [form]
-  `(.mirrorOf (vm) (str '~form)))
+(defn remote-create-str [form]
+  (.mirrorOf (vm) (str form)))
 
 (defn make-arg-list [ & args]
   (ArrayList. args))
@@ -141,32 +141,31 @@
 (def remote-read-string (partial remote-invoke rt rstring))
 
 (defn gen-form-with-locals [form thread frame]
-  (let [sym (reval-ret (gensym "cdt-") thread frame)]
-    
-    `(do
-       (reval (do (ns ~sym)
-))
-       )))
+  nil)
+
+(defn gen-form [form]
+  `(with-out-str (pr (eval '~form))))
 
 (defn reval-ret* [form thread frame locals]
   (let [form (if-not locals form
-               (gen-form-with-locals form thread frame))]
-    `(-> (remote-create-str (with-out-str (pr (eval '~form))))
-         make-arg-list
-         (remote-read-string ~thread ~frame )
-         make-arg-list
-         (remote-eval ~thread ~frame)
-         str)))
+                     (gen-form-with-locals form thread frame))]
+    (debug-repl)
+    (-> (remote-create-str (gen-form form))
+        make-arg-list
+        (remote-read-string thread frame )
+        make-arg-list
+        (remote-eval thread frame)
+        str)))
 
 (defmacro reval-ret
   ([form]
-     `(reval-ret ~form (ct)))
+     `(reval-ret ~form ~(ct)))
   ([form thread]
-     `(reval-ret ~form ~thread (cf)))
+     `(reval-ret ~form ~thread ~(cf)))
   ([form thread frame]
      `(reval-ret ~form ~thread ~frame false))
   ([form thread frame locals]
-     (reval-ret* form thread frame locals)))
+     `(reval-ret* '~form ~thread ~frame ~locals)))
 
 (defmacro reval
   ([form]
