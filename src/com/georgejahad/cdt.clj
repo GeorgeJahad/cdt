@@ -1,6 +1,7 @@
 (ns com.georgejahad.cdt
   (:require [clojure.contrib.str-utils2 :as str2])
-  (:use clojure.contrib.pprint)
+  (:use clojure.contrib.pprint
+        clojure.contrib.seq-utils)
   (:import java.util.ArrayList))
 
 ;; This handles the fact that tools.jar is a global dependency that
@@ -58,12 +59,11 @@
   (println "starting event handler")
   (let [q (.eventQueue (vm))]
     (while true
-      (println "next event")
+      (println "getting next event")
       (let [s (.remove q)]
         (doseq [i (iterator-seq (.eventIterator s))]
-          (println "handline  " i)
           (handle-event i))
-#_        (finish-set s)))))
+        #_        (finish-set s)))))
 
 (def event-handler (atom nil))
 
@@ -102,10 +102,6 @@
 (defn print-threads []
   (pprint (seq (list-threads))))
 
-(defn print-frames
-  ([] (print-frames (ct)))
-  ([thread] (pprint (seq (.frames thread)))))
-
 (defrecord BpSpec [sym methods bps])
 
 (defonce bp-list (atom {}))
@@ -132,7 +128,8 @@
   (let [methods (get-methods sym)
         k (keyword short-name)
         bps (map create-bp methods)]
-    (swap! bp-list (merge-with-exception k) {k (BpSpec. sym methods bps)})))
+    (swap! bp-list (merge-with-exception k) {k (BpSpec. sym methods bps)})
+    (println "bp set on" k)))
 
 (defmacro set-bp
   ([sym]
@@ -158,7 +155,8 @@
         (doto (.createExceptionRequest (.eventRequestManager (vm))
                                        ref-type caught uncaught)
           (.setEnabled true))]
-    (swap! catch-list assoc class catch-request)))
+    (swap! catch-list assoc class catch-request)
+    (println "catch set on" class)))
 
 (defn delete-catch [class]
   (let [catch-request (@catch-list class)]
@@ -188,6 +186,21 @@
   (remote-invoke (constantly v) sroot arg-list (ct) (cf)))
 
 (declare  reval-ret* reval-ret-str reval-ret-obj)
+
+(defn local-names
+  ([] (local-names (.frame (ct) (cf))))
+  ([frame]
+     (map #(symbol (.name (key %)))
+          (.getValues frame (.visibleVariables frame)))))
+
+(defn print-frames
+  ([] (print-frames (ct)))
+  ([thread]
+     (doseq [[i f] (indexed (.frames thread))]
+       (let [l (.location f)
+             ln (try (str (into [] (local-names f))) (catch Exception e "[]"))]
+         (printf "%3d %s %s %s:%d\n" i (.name (.method l))
+                 ln (.sourcePath l) (.lineNumber l))))))
 
 (defn add-local-to-map [m l]
   (remote-assoc
@@ -237,6 +250,12 @@
 (defmacro reval
   ([form]
      `(reval ~form true))
+  ([form locals?]
+     `(read-string (read-string (str (reval-ret-str '~form ~locals?))))))
+
+(defmacro reval-print
+  ([form]
+     `(reval-print ~form true))
   ([form locals?]
      `(println (str (reval-ret-str '~form ~locals?)))))
 
