@@ -8,7 +8,10 @@
 (with-out-str (add-classpath (format "file://%s/../lib/tools.jar"
                                      (System/getProperty "java.home"))))
 (import com.sun.jdi.Bootstrap
-        com.sun.jdi.request.EventRequest)
+        com.sun.jdi.request.EventRequest
+        com.sun.jdi.event.BreakpointEvent
+        com.sun.jdi.event.ExceptionEvent
+        com.sun.jdi.event.LocatableEvent)
 
 (use 'alex-and-georges.debug-repl)
 (defn regex-filter [regex seq]
@@ -24,10 +27,52 @@
 
 (defn vm [] @vm-data)
 
+(defonce current-thread (atom nil))
+
+(defn set-current-thread [thread]
+  (reset! current-thread thread))
+
+(defn ct [] @current-thread)
+
+(defonce current-frame (atom 0))
+
+(defn set-current-frame [frame]
+  (reset! current-frame frame))
+
+(defn cf [] @current-frame)
+
+(defn handle-event [e]
+  (Thread/yield)
+  (condp #(instance? %1 %2) e
+    BreakpointEvent (println "\n\nBreakpoint" e "hit\n\n")
+    ExceptionEvent (println "\n\nException" e
+                            (.catchLocation e) "hit\n\n")
+    :default (println "other event hit")))
+
+(defn finish-set [s]
+  (let [e (first (iterator-seq (.eventIterator s)))]
+    (set-current-thread (.thread (cast LocatableEvent e)))
+    (set-current-frame 0)))
+
+(defn handle-events []
+  (println "starting event handler")
+  (let [q (.eventQueue (vm))]
+    (while true
+      (println "next event")
+      (let [s (.remove q)]
+        (doseq [i (iterator-seq (.eventIterator s))]
+          (println "handline  " i)
+          (handle-event i))
+#_        (finish-set s)))))
+
+(def event-handler (atom nil))
+
 (defn cdt-attach [port]
   (let [args (.defaultArguments (conn))]
     (.setValue (.get args "port") port)
-    (reset! vm-data (.attach (conn) args))))
+    (reset! vm-data (.attach (conn) args))
+    (reset! event-handler (Thread. handle-events))
+    (.start @event-handler)))
 
 (defn find-classes [class-regex]
   (regex-filter class-regex (.allClasses (vm))))
@@ -50,20 +95,6 @@
 (def ge (memoize (fn [] (first (find-methods (va) #"get")))))
 
 (def sroot (memoize (fn [] (first (find-methods (va) #"swapRoot")))))
-
-(defonce current-thread (atom nil))
-
-(defn set-current-thread [thread]
-  (reset! current-thread thread))
-
-(defn ct [] @current-thread)
-
-(defonce current-frame (atom 0))
-
-(defn set-current-frame [frame]
-  (reset! current-frame frame))
-
-(defn cf [] @current-frame)
 
 (defn list-threads []
   (.allThreads (vm)))
@@ -207,4 +238,6 @@
   ([form]
      `(reval ~form true))
   ([form locals?]
-     `(read-string (read-string (str (reval-ret-str '~form ~locals?))))))
+     `(println (str (reval-ret-str '~form ~locals?)))))
+
+
