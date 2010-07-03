@@ -1,7 +1,6 @@
 (ns com.georgejahad.cdt
   (:require [clojure.contrib.str-utils2 :as str2])
-  (:use clojure.contrib.pprint
-        clojure.contrib.seq-utils)
+  (:use [clojure.contrib.seq-utils :only [indexed]])
   (:import java.util.ArrayList))
 
 ;; This handles the fact that tools.jar is a global dependency that
@@ -100,7 +99,8 @@
   (.allThreads (vm)))
 
 (defn print-threads []
-  (pprint (seq (list-threads))))
+  (doseq [[n t] (indexed (seq (list-threads)))]
+    (println n (.name t))))
 
 (defrecord BpSpec [sym methods bps])
 
@@ -222,11 +222,13 @@
                   ((var-get (ns-resolve '~'user '~sym)) ~local-name)]))
             locals)))
 
+(def current-sym (atom nil))
+
 (defn gen-form-with-locals [form]
   (let [sym (symbol (read-string (str (reval-ret-str `(gensym "cdt-") false))))
-        _ (reval-ret-str '(ns user) false)
-        v (reval-ret-obj `(def ~sym {}) false)
+        v (reval-ret-obj `(intern '~'user '~sym {}) false)
         locals (add-locals-to-map v)]
+    (reset! current-sym sym)
     `(let ~(gen-local-bindings sym locals) ~form)))
 
 (defn gen-form [form return-str?]
@@ -247,11 +249,16 @@
 (def reval-ret-str (partial reval-ret* true))
 (def reval-ret-obj (partial reval-ret* false))
 
+(defn fixup-string-reference-impl [sri]
+  ;; remove the extra quotes caused by the stringReferenceImpl
+  (apply str  (butlast (drop 1 (seq (str sri))))))
+
 (defmacro reval
   ([form]
      `(reval ~form true))
   ([form locals?]
-     `(read-string (read-string (str (reval-ret-str '~form ~locals?))))))
+     `(read-string (fixup-string-reference-impl
+                    (reval-ret-str '~form ~locals?)))))
 
 (defmacro reval-print
   ([form]
