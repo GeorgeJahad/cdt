@@ -27,6 +27,9 @@
 
 (defn vm [] @vm-data)
 
+(defn cont []
+  (.resume (vm)))
+
 (defn list-threads []
   (.allThreads (vm)))
 
@@ -242,9 +245,19 @@
      (make-arg-list m
                     (remote-create-str (.name (key l))) val) (ct) (cf))))
 
-(defn add-locals-to-map [v]
+(def cdt-sym (atom nil))
+
+(defn get-cdt-sym []
+  (or @cdt-sym
+    (reset! cdt-sym
+            (symbol (read-string
+                     (str (reval-ret-str `(gensym "cdt-") false)))))))
+
+(defn add-locals-to-map []
   (let [frame (.frame (ct) (cf))
         locals (.getValues frame (.visibleVariables frame))
+        sym (get-cdt-sym)
+        v (reval-ret-obj `(intern '~'user '~sym {}) false)
         new-map (reduce add-local-to-map (remote-get v) locals)]
     (remote-swap-root v (make-arg-list new-map))
     locals))
@@ -257,14 +270,9 @@
                   ((var-get (ns-resolve '~'user '~sym)) ~local-name)]))
             locals)))
 
-(def current-sym (atom nil))
-
 (defn gen-form-with-locals [form]
-  (let [sym (symbol (read-string (str (reval-ret-str `(gensym "cdt-") false))))
-        v (reval-ret-obj `(intern '~'user '~sym {}) false)
-        locals (add-locals-to-map v)]
-    (reset! current-sym sym)
-    `(let ~(gen-local-bindings sym locals) ~form)))
+  (let [locals (add-locals-to-map)]
+    `(let ~(gen-local-bindings (get-cdt-sym) locals) ~form)))
 
 (defn gen-form [form return-str?]
   (let [form (if return-str?
@@ -287,13 +295,12 @@
 (def reval-ret-str (partial reval-ret* true))
 (def reval-ret-obj (partial reval-ret* false))
 
-#_(defn locals [] 
-    (prn  `(var-get (ns-resolve '~'user '~(deref current-sym))))
-    (reval-ret-str `(var-get (ns-resolve '~'user '~(deref current-sym))) true))
-
 (defn locals [] 
-  (prn (list 'var-get (list 'ns-resolve ''user (list 'quote (deref current-sym)))))
-  (reval-ret-str (list 'var-get (list 'ns-resolve ''user (list 'quote (deref current-sym)))) true))
+  (let [remote-request
+        (list 'var-get (list 'ns-resolve ''user (list
+                                                 'quote (get-cdt-sym))))]
+    (add-locals-to-map)
+    (println (str (reval-ret-str remote-request true)))))
 
 (defn fixup-string-reference-impl [sri]
   ;; remove the extra quotes caused by the stringReferenceImpl
@@ -306,12 +313,10 @@
      `(read-string (fixup-string-reference-impl
                     (reval-ret-str '~form ~locals?)))))
 
-(defmacro reval-print
+(defmacro reval-println
   ([form]
      `(reval-print ~form true))
   ([form locals?]
      `(println (str (reval-ret-str '~form ~locals?)))))
 
-(defn cont []
-  (.resume (vm)))
 
