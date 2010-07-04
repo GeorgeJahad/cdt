@@ -27,10 +27,15 @@
 
 (defn vm [] @vm-data)
 
+(defn list-threads []
+  (.allThreads (vm)))
+
 (defonce current-thread (atom nil))
 
-(defn set-current-thread [thread]
-  (reset! current-thread thread))
+(defn set-current-thread [thread-num]
+  (reset! current-thread (nth (list-threads) thread-num)))
+
+(def sct set-current-thread)
 
 (defn ct [] @current-thread)
 
@@ -39,7 +44,20 @@
 (defn set-current-frame [frame]
   (reset! current-frame frame))
 
+(def scf set-current-frame)
+
 (defn cf [] @current-frame)
+
+(defn up []
+  (let [max (dec (count (.frames (ct))))]
+    (if (< (cf) max)
+      (scf (inc (cf)))
+      (println "already at top of stack"))))
+
+(defn down []
+  (if (> (cf) 0)
+    (scf (dec (cf)))
+    (println "already at bottom of stack")))
 
 (defn handle-event [e]
   (Thread/yield)
@@ -58,11 +76,11 @@
   (println "starting event handler")
   (let [q (.eventQueue (vm))]
     (while true
-      (println "getting next event")
-      (let [s (.remove q)]
-        (doseq [i (iterator-seq (.eventIterator s))]
-          (handle-event i))
-        #_        (finish-set s)))))
+           (println "getting next event")
+           (let [s (.remove q)]
+             (doseq [i (iterator-seq (.eventIterator s))]
+               (handle-event i))
+             #_        (finish-set s)))))
 
 (def event-handler (atom nil))
 
@@ -94,9 +112,6 @@
 (def ge (memoize (fn [] (first (find-methods (va) #"get")))))
 
 (def sroot (memoize (fn [] (first (find-methods (va) #"swapRoot")))))
-
-(defn list-threads []
-  (.allThreads (vm)))
 
 (defn print-threads []
   (doseq [[n t] (indexed (seq (list-threads)))]
@@ -206,10 +221,26 @@
          (printf "%3d %s %s %s %s:%d\n" i c (.name (.method l))
                  ln sp (.lineNumber l))))))
 
+(defn convert-type [type val]
+  (reval-ret-obj (list 'new type (str val)) false))
+
+(defn gen-conversion [t]
+  (let [c (Class/forName (str "com.sun.tools.jdi." t "ValueImpl"))
+        ctor (if (= t 'Char) 'Character t)]
+    [c (partial convert-type ctor)]))
+
+(defmacro gen-conversion-map [types]
+  `(into {} (map gen-conversion '~types)))
+
+(def conversion-map (gen-conversion-map [Boolean Integer Byte Char Double Float Integer Long Short]))
+
 (defn add-local-to-map [m l]
-  (remote-assoc
-   (make-arg-list m
-                  (remote-create-str (.name (key l))) (val l)) (ct) (cf)))
+  (let [val (if-let [f (conversion-map (type (val l)))]
+              (f (val l))
+              (val l))]
+    (remote-assoc
+     (make-arg-list m
+                    (remote-create-str (.name (key l))) val) (ct) (cf))))
 
 (defn add-locals-to-map [v]
   (let [frame (.frame (ct) (cf))
@@ -236,9 +267,12 @@
     `(let ~(gen-local-bindings sym locals) ~form)))
 
 (defn gen-form [form return-str?]
-  (if return-str?
-    `(with-out-str (pr (eval '~form)))
-    `(eval '~form)))
+  (let [form (if return-str?
+               `(with-out-str (pr (eval '~form)))
+               `(eval '~form))]
+    `(try ~form
+          (catch Throwable t#
+            (with-out-str (pr (str "remote exception: " t#)))))))
 
 (defn reval-ret*
   [return-str? form locals?]
@@ -253,9 +287,17 @@
 (def reval-ret-str (partial reval-ret* true))
 (def reval-ret-obj (partial reval-ret* false))
 
+#_(defn locals [] 
+    (prn  `(var-get (ns-resolve '~'user '~(deref current-sym))))
+    (reval-ret-str `(var-get (ns-resolve '~'user '~(deref current-sym))) true))
+
+(defn locals [] 
+  (prn (list 'var-get (list 'ns-resolve ''user (list 'quote (deref current-sym)))))
+  (reval-ret-str (list 'var-get (list 'ns-resolve ''user (list 'quote (deref current-sym)))) true))
+
 (defn fixup-string-reference-impl [sri]
   ;; remove the extra quotes caused by the stringReferenceImpl
-  (apply str  (butlast (drop 1 (seq (str sri))))))
+  (apply str (butlast (drop 1 (seq (str sri))))))
 
 (defmacro reval
   ([form]
@@ -270,4 +312,6 @@
   ([form locals?]
      `(println (str (reval-ret-str '~form ~locals?)))))
 
+(defn cont []
+  (.resume (vm)))
 
