@@ -198,9 +198,13 @@
   ([thread]
      (doseq [[i f] (indexed (.frames thread))]
        (let [l (.location f)
-             ln (try (str (into [] (local-names f))) (catch Exception e "[]"))]
-         (printf "%3d %s %s %s:%d\n" i (.name (.method l))
-                 ln (.sourcePath l) (.lineNumber l))))))
+             ln (try (str (into [] (local-names f))) (catch Exception e "[]"))
+             sp (try (.sourcePath l) (catch Exception e "source not found"))
+             sp (last  (.split sp "/"))
+             c (.name (.declaringType (.method l)))]
+         
+         (printf "%3d %s %s %s %s:%d\n" i c (.name (.method l))
+                 ln sp (.lineNumber l))))))
 
 (defn add-local-to-map [m l]
   (remote-assoc
