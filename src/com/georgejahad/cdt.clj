@@ -70,20 +70,22 @@
                             (.catchLocation e) "hit\n\n")
     :default (println "other event hit")))
 
-(defn finish-set [s]
+(defn get-thread [#^LocatableEvent e]
+  (.thread e))
+
+(defn finish-set [s] 
   (let [e (first (iterator-seq (.eventIterator s)))]
-    (set-current-thread (.thread (cast LocatableEvent e)))
-    (set-current-frame 0)))
+    (set-current-frame 0)
+    (reset! current-thread (get-thread e))))
 
 (defn handle-events []
   (println "starting event handler")
   (let [q (.eventQueue (vm))]
     (while true
-           (println "getting next event")
            (let [s (.remove q)]
              (doseq [i (iterator-seq (.eventIterator s))]
                (handle-event i))
-             #_        (finish-set s)))))
+             (finish-set s)))))
 
 (def event-handler (atom nil))
 
@@ -205,25 +207,6 @@
 
 (declare  reval-ret* reval-ret-str reval-ret-obj)
 
-(defn local-names
-  ([] (local-names (.frame (ct) (cf))))
-  ([frame]
-     (map #(symbol (.name (key %)))
-          (.getValues frame (.visibleVariables frame)))))
-
-(defn print-frames
-  ([] (print-frames (ct)))
-  ([thread]
-     (doseq [[i f] (indexed (.frames thread))]
-       (let [l (.location f)
-             ln (try (str (into [] (local-names f))) (catch Exception e "[]"))
-             sp (try (.sourcePath l) (catch Exception e "source not found"))
-             sp (last  (.split sp "/"))
-             c (.name (.declaringType (.method l)))]
-         
-         (printf "%3d %s %s %s %s:%d\n" i c (.name (.method l))
-                 ln sp (.lineNumber l))))))
-
 (defn convert-type [type val]
   (reval-ret-obj (list 'new type (str val)) false))
 
@@ -249,9 +232,9 @@
 
 (defn get-cdt-sym []
   (or @cdt-sym
-    (reset! cdt-sym
-            (symbol (read-string
-                     (str (reval-ret-str `(gensym "cdt-") false)))))))
+      (reset! cdt-sym
+              (symbol (read-string
+                       (str (reval-ret-str `(gensym "cdt-") false)))))))
 
 (defn add-locals-to-map []
   (let [frame (.frame (ct) (cf))
@@ -295,17 +278,34 @@
 (def reval-ret-str (partial reval-ret* true))
 (def reval-ret-obj (partial reval-ret* false))
 
-(defn locals [] 
-  (let [remote-request
-        (list 'var-get (list 'ns-resolve ''user (list
-                                                 'quote (get-cdt-sym))))]
-    (add-locals-to-map)
-    (println (str (reval-ret-str remote-request true)))))
-
 (defn fixup-string-reference-impl [sri]
   ;; remove the extra quotes caused by the stringReferenceImpl
   (apply str (butlast (drop 1 (seq (str sri))))))
 
+(defn local-names 
+  ([] (local-names (cf)))
+  ([f]
+     (let [frame (.frame (ct) f)
+           locals (.getValues frame (.visibleVariables frame))]
+       (into [] (map #(symbol (.name %)) (keys locals))))))
+
+(defn locals [] 
+  (dorun (map #(println %1 %2)
+              (local-names)
+              (read-string (fixup-string-reference-impl
+                            (reval-ret-str (local-names) true))))))
+(defn print-frames
+  ([] (print-frames (ct)))
+  ([thread]
+     (doseq [[i f] (indexed (.frames thread))]
+       (let [l (.location f)
+             ln (try (str (local-names i)) (catch Exception e "[]"))
+             sp (try (.sourcePath l) (catch Exception e "source not found"))
+             sp (last  (.split sp "/"))
+             c (.name (.declaringType (.method l)))]
+         
+         (printf "%3d %s %s %s %s:%d\n" i c (.name (.method l))
+                 ln sp (.lineNumber l))))))
 (defmacro reval
   ([form]
      `(reval ~form true))
@@ -315,8 +315,6 @@
 
 (defmacro reval-println
   ([form]
-     `(reval-print ~form true))
+     `(reval-println ~form true))
   ([form locals?]
      `(println (str (reval-ret-str '~form ~locals?)))))
-
-
