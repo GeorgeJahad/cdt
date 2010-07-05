@@ -11,17 +11,18 @@
         com.sun.jdi.request.EventRequest
         com.sun.jdi.event.BreakpointEvent
         com.sun.jdi.event.ExceptionEvent
-        com.sun.jdi.event.LocatableEvent)
+        com.sun.jdi.event.LocatableEvent
+        com.sun.jdi.IncompatibleThreadStateException)
 
 (use 'alex-and-georges.debug-repl)
 (defn regex-filter [regex seq]
   (filter #(re-find regex (.name %)) seq))
 
-(def conn
-     (memoize
-      (fn [] (first (regex-filter #"SocketAttach"
-                                  (.allConnectors
-                                   (Bootstrap/virtualMachineManager)))))))
+(defn get-socket-connectors []
+  (regex-filter #"SocketAttach" (.allConnectors
+                                 (Bootstrap/virtualMachineManager))))
+
+(def conn (memoize #(first (get-socket-connectors))))
 
 (defonce vm-data (atom nil))
 
@@ -73,7 +74,7 @@
 (defn get-thread [#^LocatableEvent e]
   (.thread e))
 
-(defn finish-set [s] 
+(defn finish-set [s]
   (let [e (first (iterator-seq (.eventIterator s)))]
     (set-current-frame 0)
     (reset! current-thread (get-thread e))))
@@ -102,21 +103,21 @@
 (defn find-methods [class method-regex]
   (regex-filter method-regex (.methods class)))
 
-(def rt (memoize (fn [] (first (find-classes #"clojure.lang.RT")))))
+(def rt (memoize #(first (find-classes #"clojure.lang.RT"))))
 
-(def co (memoize (fn [] (first (find-classes #"clojure.lang.Compiler")))))
+(def co (memoize #(first (find-classes #"clojure.lang.Compiler"))))
 
-(def va (memoize (fn [] (first (find-classes #"clojure.lang.Var")))))
+(def va (memoize #(first (find-classes #"clojure.lang.Var"))))
 
-(def rstring (memoize (fn [] (first (find-methods (rt) #"readString")))))
+(def rstring (memoize #(first (find-methods (rt) #"readString"))))
 
-(def as (memoize (fn [] (first (find-methods (rt) #"assoc")))))
+(def as (memoize #(first (find-methods (rt) #"assoc"))))
 
-(def ev (memoize (fn [] (first (find-methods (co) #"eval")))))
+(def ev (memoize #(first (find-methods (co) #"eval"))))
 
-(def ge (memoize (fn [] (first (find-methods (va) #"get")))))
+(def ge (memoize #(first (find-methods (va) #"get"))))
 
-(def sroot (memoize (fn [] (first (find-methods (va) #"swapRoot")))))
+(def sroot (memoize #(first (find-methods (va) #"swapRoot"))))
 
 (defn print-threads []
   (doseq [[n t] (indexed (seq (list-threads)))]
@@ -205,7 +206,35 @@
 (defn remote-swap-root [v arg-list]
   (remote-invoke (constantly v) sroot arg-list (ct) (cf)))
 
-(declare  reval-ret* reval-ret-str reval-ret-obj)
+(declare reval-ret* reval-ret-str reval-ret-obj)
+
+
+(defn get-file-name [frame]
+  (let [sp (try (.sourcePath (.location frame))
+                (catch Exception e "source not found"))]
+    (last  (.split sp "/"))))
+
+(defn clojure-frame? [frame fields]
+  (let [names (map #(.name %) fields)]
+    (or (.endsWith (get-file-name frame) ".clj")
+        (some #{"__meta"} names))))
+
+(defn remove-default-fields [fields]
+  (seq (remove #(re-find #"(^const__\d*$|^__meta$)" (.name %)) fields)))
+
+(defn gen-closure-field-list
+  ([] (gen-closure-field-list (cf)))
+  ([f] (let [frame (.frame (ct) f)]
+         (when-let [obj (.thisObject frame)]
+           (let [fields (.fields (.referenceType obj))]
+             (if (clojure-frame? frame fields)
+               (remove-default-fields fields)))))))
+
+(defn gen-closure-map
+  ([] (gen-closure-map (cf)))
+  ([f] (when-let [obj (.thisObject (.frame (ct) f))]
+         (when-let [fields (gen-closure-field-list f)]
+           (.getValues obj fields)))))
 
 (defn convert-type [type val]
   (reval-ret-obj (list 'new type (str val)) false))
@@ -218,12 +247,18 @@
 (defmacro gen-conversion-map [types]
   `(into {} (map gen-conversion '~types)))
 
-(def conversion-map (gen-conversion-map [Boolean Integer Byte Char Double Float Integer Long Short]))
+(def conversion-map
+     (gen-conversion-map
+      [Boolean Integer Byte Char Double Float Integer Long Short]))
+
+(defn convert-primitives [p]
+  (if-let [f (conversion-map (type p))]
+    (f p)
+    p))
+
 
 (defn add-local-to-map [m l]
-  (let [val (if-let [f (conversion-map (type (val l)))]
-              (f (val l))
-              (val l))]
+  (let [val (convert-primitives (val l))]
     (remote-assoc
      (make-arg-list m
                     (remote-create-str (.name (key l))) val) (ct) (cf))))
@@ -236,14 +271,19 @@
               (symbol (read-string
                        (str (reval-ret-str `(gensym "cdt-") false)))))))
 
+(defn gen-locals-and-closures
+  ([] (gen-locals-and-closures (cf)))
+  ([f] (let [frame (.frame (ct) f)
+             locals (.getValues frame (.visibleVariables frame))]
+         (merge {} locals (gen-closure-map f)))))
+
 (defn add-locals-to-map []
-  (let [frame (.frame (ct) (cf))
-        locals (.getValues frame (.visibleVariables frame))
+  (let [locals-and-closures (gen-locals-and-closures)
         sym (get-cdt-sym)
         v (reval-ret-obj `(intern '~'user '~sym {}) false)
-        new-map (reduce add-local-to-map (remote-get v) locals)]
+        new-map (reduce add-local-to-map (remote-get v) locals-and-closures)]
     (remote-swap-root v (make-arg-list new-map))
-    locals))
+    locals-and-closures))
 
 (defn gen-local-bindings [sym locals]
   (into [] (mapcat
@@ -267,13 +307,18 @@
 
 (defn reval-ret*
   [return-str? form locals?]
-  (let [form (if-not locals? form
-                     (gen-form-with-locals form))]
-    (-> (remote-create-str (gen-form form return-str?))
-        make-arg-list
-        (remote-read-string (ct) (cf))
-        make-arg-list
-        (remote-eval (ct) (cf)))))
+  (try
+   (let [form (if-not locals? form
+                      (gen-form-with-locals form))]
+     (-> (remote-create-str (gen-form form return-str?))
+         make-arg-list
+         (remote-read-string (ct) (cf))
+         make-arg-list
+         (remote-eval (ct) (cf))))
+   (catch IncompatibleThreadStateException e
+     (throw
+      (IncompatibleThreadStateException.
+       "reval can only be run after stopping at an breakpoint or exception")))))
 
 (def reval-ret-str (partial reval-ret* true))
 (def reval-ret-obj (partial reval-ret* false))
@@ -282,30 +327,27 @@
   ;; remove the extra quotes caused by the stringReferenceImpl
   (apply str (butlast (drop 1 (seq (str sri))))))
 
-(defn local-names 
+(defn local-names
   ([] (local-names (cf)))
   ([f]
-     (let [frame (.frame (ct) f)
-           locals (.getValues frame (.visibleVariables frame))]
-       (into [] (map #(symbol (.name %)) (keys locals))))))
+     (into [] (map #(symbol (.name %)) (keys (gen-locals-and-closures f))))))
 
-(defn locals [] 
+(defn locals []
   (dorun (map #(println %1 %2)
               (local-names)
               (read-string (fixup-string-reference-impl
                             (reval-ret-str (local-names) true))))))
+
 (defn print-frames
   ([] (print-frames (ct)))
   ([thread]
      (doseq [[i f] (indexed (.frames thread))]
        (let [l (.location f)
              ln (try (str (local-names i)) (catch Exception e "[]"))
-             sp (try (.sourcePath l) (catch Exception e "source not found"))
-             sp (last  (.split sp "/"))
+             fname (get-file-name f)
              c (.name (.declaringType (.method l)))]
-         
          (printf "%3d %s %s %s %s:%d\n" i c (.name (.method l))
-                 ln sp (.lineNumber l))))))
+                 ln fname (.lineNumber l))))))
 (defmacro reval
   ([form]
      `(reval ~form true))
