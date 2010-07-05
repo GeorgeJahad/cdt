@@ -305,16 +305,18 @@
           (catch Throwable t#
             (with-out-str (pr (str "remote exception: " t#)))))))
 
+(defn gen-remote-form-and-eval [form]
+  (-> (remote-create-str form)
+      make-arg-list
+      (remote-read-string (ct) (cf))
+      make-arg-list
+      (remote-eval (ct) (cf))))
+
 (defn reval-ret*
   [return-str? form locals?]
   (try
-   (let [form (if-not locals? form
-                      (gen-form-with-locals form))]
-     (-> (remote-create-str (gen-form form return-str?))
-         make-arg-list
-         (remote-read-string (ct) (cf))
-         make-arg-list
-         (remote-eval (ct) (cf))))
+   (let [form (if-not locals? form (gen-form-with-locals form))]
+     (gen-remote-form-and-eval (gen-form form return-str?)))
    (catch IncompatibleThreadStateException e
      (throw
       (IncompatibleThreadStateException.
@@ -329,8 +331,10 @@
 
 (defn local-names
   ([] (local-names (cf)))
-  ([f]
-     (into [] (map #(symbol (.name %)) (keys (gen-locals-and-closures f))))))
+  ([f] (->> (gen-locals-and-closures f)
+            keys
+            (map #(symbol (.name %)))
+            (into []))))
 
 (defn locals []
   (dorun (map #(println %1 %2)
@@ -348,6 +352,7 @@
              c (.name (.declaringType (.method l)))]
          (printf "%3d %s %s %s %s:%d\n" i c (.name (.method l))
                  ln fname (.lineNumber l))))))
+
 (defmacro reval
   ([form]
      `(reval ~form true))
