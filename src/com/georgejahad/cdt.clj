@@ -1,6 +1,7 @@
 (ns com.georgejahad.cdt
   (:require [clojure.contrib.str-utils2 :as str2])
-  (:use [clojure.contrib.seq-utils :only [indexed]])
+  (:use [clojure.contrib.seq-utils :only [indexed]]
+        [clojure.contrib.repl-utils :only [start-handling-break add-break-thread!]])
   (:import java.util.ArrayList
            clojure.lang.Compiler))
 
@@ -15,7 +16,6 @@
         com.sun.jdi.event.LocatableEvent
         com.sun.jdi.IncompatibleThreadStateException)
 
-(use 'alex-and-georges.debug-repl)
 (defn regex-filter [regex seq]
   (filter #(re-find regex (.name %)) seq))
 
@@ -152,7 +152,7 @@
 
 (defn set-bp-fn [sym]
   (let [methods (get-methods sym)
-        bps (map create-bp methods)]
+        bps (doall (map create-bp methods))]
     (if (seq methods)
       (do
         (swap! bp-list (merge-with-exception sym) {sym (BpSpec. methods bps)})
@@ -373,3 +373,6 @@
      `(reval-println ~form true))
   ([form locals?]
      `(println (str (reval-ret-str '~form ~locals?)))))
+
+(start-handling-break)
+(add-break-thread!)
