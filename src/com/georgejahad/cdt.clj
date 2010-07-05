@@ -1,7 +1,8 @@
 (ns com.georgejahad.cdt
   (:require [clojure.contrib.str-utils2 :as str2])
   (:use [clojure.contrib.seq-utils :only [indexed]])
-  (:import java.util.ArrayList))
+  (:import java.util.ArrayList
+           clojure.lang.Compiler))
 
 ;; This handles the fact that tools.jar is a global dependency that
 ;; can't really be in a repo:
@@ -123,7 +124,7 @@
   (doseq [[n t] (indexed (seq (list-threads)))]
     (println n (.name t))))
 
-(defrecord BpSpec [sym methods bps])
+(defrecord BpSpec [methods bps])
 
 (defonce bp-list (atom {}))
 
@@ -137,33 +138,40 @@
     (.setSuspendPolicy EventRequest/SUSPEND_EVENT_THREAD)
     (.setEnabled true)))
 
+(defn munge-sym [sym]
+  (let [[ns sym] (.split (str sym) "/")]
+    (str (Compiler/munge ns) "\\$" (Compiler/munge sym))))
+
 (defn gen-class-pattern [sym]
-  (let [s (str2/replace (str sym) "/" "\\$")]
+  (let [s (munge-sym sym)]
     (re-pattern (str "^" s "$"))))
 
 (defn get-methods [sym]
   (for [c (find-classes (gen-class-pattern sym))
         m (regex-filter #"(invoke|doInvoke)" (.methods c))] m))
 
-(defn set-bp-fn [sym short-name]
+(defn set-bp-fn [sym]
   (let [methods (get-methods sym)
-        k (keyword short-name)
         bps (map create-bp methods)]
-    (swap! bp-list (merge-with-exception k) {k (BpSpec. sym methods bps)})
-    (println "bp set on" k)))
+    (if (seq methods)
+      (do
+        (swap! bp-list (merge-with-exception sym) {sym (BpSpec. methods bps)})
+        (println "bp set on" methods))
+      (println "no methods found for" sym))))
 
 (defmacro set-bp
-  ([sym]
-     (let [short-name (symbol (second (seq (.split (str sym) "/"))))]
-       `(set-bp ~sym ~short-name)))
-  ([sym short-name]
-     `(set-bp-fn '~sym '~short-name)))
+  [sym]
+  `(set-bp-fn '~sym))
 
-(defn delete-bp [short-name]
-  (doseq [bp (:bps (short-name @bp-list))]
+(defn delete-bp-fn [sym]
+  (doseq [bp (:bps (@bp-list sym))]
     (.setEnabled bp false)
     (.deleteEventRequest (.eventRequestManager (vm)) bp))
-  (swap! bp-list dissoc short-name))
+  (swap! bp-list dissoc sym))
+
+(defmacro delete-bp
+  [sym]
+  `(delete-bp-fn '~sym))
 
 (defonce catch-list (atom {}))
 
