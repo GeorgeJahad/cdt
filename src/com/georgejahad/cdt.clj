@@ -1,7 +1,16 @@
+;; Copyright (c) George Jahad. All rights reserved.
+;; The use and distribution terms for this software are covered by the
+;; Eclipse Public License 1.0 (http://opensource.org/licenses/eclipse-1.0.php)
+;; which can be found in the file COPYING at the root of this distribution.
+;; By using this software in any fashion, you are agreeing to be bound by
+;; the terms of this license.
+;; You must not remove this notice, or any other, from this software.
+
 (ns com.georgejahad.cdt
   (:require [clojure.contrib.str-utils2 :as str2])
   (:use [clojure.contrib.seq-utils :only [indexed]]
-        [clojure.contrib.repl-utils :only [start-handling-break add-break-thread!]])
+        [clojure.contrib.repl-utils :only
+         [start-handling-break add-break-thread!]])
   (:import java.util.ArrayList
            clojure.lang.Compiler))
 
@@ -216,7 +225,6 @@
 
 (declare reval-ret* reval-ret-str reval-ret-obj)
 
-
 (defn get-file-name [frame]
   (let [sp (try (.sourcePath (.location frame))
                 (catch Exception e "source not found"))]
@@ -227,8 +235,11 @@
     (or (.endsWith (get-file-name frame) ".clj")
         (some #{"__meta"} names))))
 
+(def default-regex
+     #"(^const__\d*$|^__meta$|^__var__callsite__\d*$|^__site__\d*__$|^__thunk__\d*__$)")
+
 (defn remove-default-fields [fields]
-  (seq (remove #(re-find #"(^const__\d*$|^__meta$)" (.name %)) fields)))
+  (seq (remove #(re-find default-regex (.name %)) fields)))
 
 (defn gen-closure-field-list
   ([] (gen-closure-field-list (cf)))
