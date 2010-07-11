@@ -103,6 +103,7 @@
 (defn cdt-attach [port]
   (let [args (.defaultArguments (conn))]
     (.setValue (.get args "port") port)
+    (.setValue (.get args "hostname") "localhost")        
     (reset! vm-data (.attach (conn) args))
     (reset! event-handler (Thread. handle-events))
     (.start @event-handler)))
