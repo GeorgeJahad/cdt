@@ -100,13 +100,15 @@
 
 (def event-handler (atom nil))
 
-(defn cdt-attach [port]
-  (let [args (.defaultArguments (conn))]
-    (.setValue (.get args "port") port)
-    (.setValue (.get args "hostname") "localhost")        
-    (reset! vm-data (.attach (conn) args))
-    (reset! event-handler (Thread. handle-events))
-    (.start @event-handler)))
+(defn cdt-attach
+  ([port] (cdt-attach "localhost" port))
+  ([hostname port]
+     (let [args (.defaultArguments (conn))]
+       (.setValue (.get args "port") port)
+       (.setValue (.get args "hostname") hostname)        
+       (reset! vm-data (.attach (conn) args))
+       (reset! event-handler (Thread. handle-events))
+       (.start @event-handler))))
 
 (defn find-classes [class-regex]
   (regex-filter class-regex (.allClasses (vm))))
