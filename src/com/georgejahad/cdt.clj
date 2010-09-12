@@ -24,6 +24,8 @@
         com.sun.jdi.request.EventRequest
         com.sun.jdi.event.BreakpointEvent
         com.sun.jdi.event.ExceptionEvent
+        com.sun.jdi.request.StepRequest
+        com.sun.jdi.event.StepEvent
         com.sun.jdi.event.LocatableEvent
         com.sun.jdi.IncompatibleThreadStateException)
 
@@ -70,6 +72,23 @@
 
 (defn cf [] @current-frame)
 
+(defonce source-path (atom ""))
+
+(defn set-source-path [path]
+  (reset! source-path path))
+
+(defn get-source []
+  (let [file (.sourcePath (.location (.frame (ct) (cf))))
+        paths (.split @source-path ":")]
+    (first (filter #(.exists (java.io.File. %))
+                   (for [p paths] (str p "/" file))))))
+
+(defn print-current-location []
+  (let [line (.lineNumber (.location (.frame (ct) (cf))))]
+    (if-let [path (get-source)]
+      (println "CDT location is" (format "%s:%d" path line))
+      (println "Source not found"))))
+
 (defn up []
   (let [max (dec (count (.frames (ct))))]
     (if (< (cf) max)
@@ -91,6 +110,7 @@
   (condp #(instance? %1 %2) e
     BreakpointEvent (println "\n\nBreakpoint" e "hit\n\n")
     ExceptionEvent (handle-exception e)
+    StepEvent  (println "\n\nStep" e "hit\n\n")
     :default (println "other event hit")))
 
 (defn get-thread [#^LocatableEvent e]
@@ -99,20 +119,23 @@
 (defn finish-set [s]
   (let [e (first (iterator-seq (.eventIterator s)))]
     (set-current-frame 0)
-    (reset! current-thread (get-thread e))))
+    (reset! current-thread (get-thread e))
+    (print-current-location)))
 
 (defn handle-events []
   (println "starting event handler")
   (let [q (.eventQueue (vm))]
     (while true
-      (let [s (.remove q)]
-        (doseq [i (iterator-seq (.eventIterator s))]
-          (handle-event i))
-        (finish-set s)))))
+      (try
+       (let [s (.remove q)]
+         (doseq [i (iterator-seq (.eventIterator s))]
+           (handle-event i))
+         (finish-set s))
+       (catch Exception e (println "exception in event handler" e))))))
 
 (def event-handler (atom nil))
 
-(defn start-event-handler [args]
+(defn start-event-handler []
   (reset! event-handler (Thread. handle-events))
   (.start @event-handler))
 
@@ -130,7 +153,8 @@
      (let [args (.defaultArguments (conn))]
        (.setValue (.get args "port") port)
        (.setValue (.get args "hostname") hostname)
-       (start-event-handler args))))
+       (reset! vm-data (.attach (conn) args))
+       (start-event-handler))))
 
 (defn find-classes [class-regex]
   (regex-filter class-regex (.allClasses (vm))))
@@ -166,6 +190,13 @@
   (partial merge-with
            #(throw (IllegalArgumentException.
                     (str "bp-list already contains a " short-name)))))
+(defn create-step []
+  (doto (.createStepRequest
+         (.eventRequestManager (vm)) (ct)
+         StepRequest/STEP_LINE StepRequest/STEP_INTO )
+    (.setSuspendPolicy EventRequest/SUSPEND_EVENT_THREAD)
+    (.setEnabled true)))
+
 (defn create-bp [m]
   (doto (.createBreakpointRequest
          (.eventRequestManager (vm)) (.location m))
@@ -428,14 +459,15 @@
 (use 'alex-and-georges.debug-repl)
 (import sun.jvm.hotspot.jdi.FieldImpl)
 
+(declare show-data)
 (defn handle-field [prev [depth limit data]]
   (show-data  (.getValue prev data) [(inc depth) limit (.getValue prev data)]))
 
 (def gbug (atom nil))
 (defn show-data [prev [depth limit data]]
-#_  (println data)
- (when @gbug
-   (debug-repl))
+  #_  (println data)
+  (when @gbug
+    (debug-repl))
   (cond
     (> depth limit)
     (do
@@ -443,11 +475,11 @@
       [depth limit data])
     (field? data)
     (do
-#_      (println "field found ")
+      #_      (println "field found ")
       (handle-field prev [depth limit data]))
     (array-ref? data)
     (map #(show-data data [(inc depth) limit %])
-           (.getValues data))
+         (.getValues data))
     (string-ref? data)
     [depth limit data]
     :else
@@ -455,3 +487,4 @@
       (map #(show-data data [(inc depth) limit %])
            fields)
       [depth limit data])))
+
