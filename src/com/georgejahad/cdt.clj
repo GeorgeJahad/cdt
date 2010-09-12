@@ -18,6 +18,8 @@
 ;; can't really be in a repo:
 (with-out-str (add-classpath (format "file://%s/../lib/tools.jar"
                                      (System/getProperty "java.home"))))
+(with-out-str (add-classpath (format "file://%s/../lib/sa-jdi.jar"
+                                     (System/getProperty "java.home"))))
 (import com.sun.jdi.Bootstrap
         com.sun.jdi.request.EventRequest
         com.sun.jdi.event.BreakpointEvent
@@ -28,11 +30,17 @@
 (defn regex-filter [regex seq]
   (filter #(re-find regex (.name %)) seq))
 
+(defn get-connectors [regex]
+  (regex-filter regex (.allConnectors
+                       (Bootstrap/virtualMachineManager))))
+
+(defonce conn-data (atom nil))
+
+(defn conn [] @conn-data)
+
 (defn get-socket-connectors []
   (regex-filter #"SocketAttach" (.allConnectors
                                  (Bootstrap/virtualMachineManager))))
-
-(def conn (memoize #(first (get-socket-connectors))))
 
 (defonce vm-data (atom nil))
 
@@ -73,12 +81,16 @@
     (scf (dec (cf)))
     (println "already at bottom of stack")))
 
+(defn handle-exception [e]
+  (println "\n\nException" e
+           (.catchLocation e) "hit\n\n")
+  #_(.exec (Runtime/getRuntime) "/tmp/g3"))
+
 (defn handle-event [e]
   (Thread/yield)
   (condp #(instance? %1 %2) e
     BreakpointEvent (println "\n\nBreakpoint" e "hit\n\n")
-    ExceptionEvent (println "\n\nException" e
-                            (.catchLocation e) "hit\n\n")
+    ExceptionEvent (handle-exception e)
     :default (println "other event hit")))
 
 (defn get-thread [#^LocatableEvent e]
@@ -93,22 +105,32 @@
   (println "starting event handler")
   (let [q (.eventQueue (vm))]
     (while true
-           (let [s (.remove q)]
-             (doseq [i (iterator-seq (.eventIterator s))]
-               (handle-event i))
-             (finish-set s)))))
+      (let [s (.remove q)]
+        (doseq [i (iterator-seq (.eventIterator s))]
+          (handle-event i))
+        (finish-set s)))))
 
 (def event-handler (atom nil))
+
+(defn start-event-handler [args]
+  (reset! event-handler (Thread. handle-events))
+  (.start @event-handler))
+
+(defn cdt-attach-core []
+  (reset! conn-data (first (get-connectors #"SADebugServerAttachingConnector")))
+  (let [args (.defaultArguments (conn))]
+    (println args)
+    (.setValue (.get args "debugServerName") "localhost")
+    (reset! vm-data (.attach (conn) args))))
 
 (defn cdt-attach
   ([port] (cdt-attach "localhost" port))
   ([hostname port]
+     (reset! conn-data (first (get-connectors #"SocketAttach")))
      (let [args (.defaultArguments (conn))]
        (.setValue (.get args "port") port)
-       (.setValue (.get args "hostname") hostname)        
-       (reset! vm-data (.attach (conn) args))
-       (reset! event-handler (Thread. handle-events))
-       (.start @event-handler))))
+       (.setValue (.get args "hostname") hostname)
+       (start-event-handler args))))
 
 (defn find-classes [class-regex]
   (regex-filter class-regex (.allClasses (vm))))
@@ -390,3 +412,46 @@
 
 (start-handling-break)
 (add-break-thread!)
+
+(defn class-test [string data]
+  (= (str (class data)) (str "class sun.jvm.hotspot.jdi." string)))
+
+(def field? (partial class-test "FieldImpl"))
+(def array-ref? (partial class-test "ArrayReferenceImpl"))
+(def string-ref? (partial class-test "StringReferenceImpl"))
+
+(defn seqable [data]
+  (try
+   (.allFields (.referenceType data))
+   (catch Exception _ false)))
+
+(use 'alex-and-georges.debug-repl)
+(import sun.jvm.hotspot.jdi.FieldImpl)
+
+(defn handle-field [prev [depth limit data]]
+  (show-data  (.getValue prev data) [(inc depth) limit (.getValue prev data)]))
+
+(def gbug (atom nil))
+(defn show-data [prev [depth limit data]]
+#_  (println data)
+ (when @gbug
+   (debug-repl))
+  (cond
+    (> depth limit)
+    (do
+      (println "depth " depth "reached")
+      [depth limit data])
+    (field? data)
+    (do
+#_      (println "field found ")
+      (handle-field prev [depth limit data]))
+    (array-ref? data)
+    (map #(show-data data [(inc depth) limit %])
+           (.getValues data))
+    (string-ref? data)
+    [depth limit data]
+    :else
+    (if-let [fields (seqable data)]
+      (map #(show-data data [(inc depth) limit %])
+           fields)
+      [depth limit data])))
