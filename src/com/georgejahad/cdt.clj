@@ -14,6 +14,9 @@
   (:import java.util.ArrayList
            clojure.lang.Compiler))
 
+(declare reval-ret* reval-ret-str reval-ret-obj
+         disable-stepping show-data init-step-list print-frame)
+
 ;; This handles the fact that tools.jar is a global dependency that
 ;; can't really be in a repo:
 (with-out-str (add-classpath (format "file://%s/../lib/tools.jar"
@@ -84,21 +87,26 @@
                    (for [p paths] (str p "/" file))))))
 
 (defn print-current-location []
-  (let [line (.lineNumber (.location (.frame (ct) (cf))))]
-    (if-let [path (get-source)]
-      (println "CDT location is" (format "%s:%d" path line))
-      (println "Source not found"))))
+  (try
+   (let [line (.lineNumber (.location (.frame (ct) (cf))))]
+     (if-let [path (get-source)]
+       (println "CDT location is" (format "%s:%d" path line))
+       (println "Source not found")))
+   (catch Exception _ (println "Source not found")))
+  (print-frame))
 
 (defn up []
   (let [max (dec (count (.frames (ct))))]
     (if (< (cf) max)
       (scf (inc (cf)))
-      (println "already at top of stack"))))
+      (println "already at top of stack")))
+  (print-current-location))
 
 (defn down []
   (if (> (cf) 0)
     (scf (dec (cf)))
-    (println "already at bottom of stack")))
+    (println "already at bottom of stack"))
+  (print-current-location))
 
 (defn handle-exception [e]
   (println "\n\nException" e
@@ -120,6 +128,7 @@
   (let [e (first (iterator-seq (.eventIterator s)))]
     (set-current-frame 0)
     (reset! current-thread (get-thread e))
+    (disable-stepping)
     (print-current-location)))
 
 (defn handle-events []
@@ -133,18 +142,22 @@
          (finish-set s))
        (catch Exception e (println "exception in event handler" e))))))
 
-(def event-handler (atom nil))
+(defonce event-handler (atom nil))
 
 (defn start-event-handler []
   (reset! event-handler (Thread. handle-events))
   (.start @event-handler))
+
+(defn finish-attach []
+  (init-step-list))
 
 (defn cdt-attach-core []
   (reset! conn-data (first (get-connectors #"SADebugServerAttachingConnector")))
   (let [args (.defaultArguments (conn))]
     (println args)
     (.setValue (.get args "debugServerName") "localhost")
-    (reset! vm-data (.attach (conn) args))))
+    (reset! vm-data (.attach (conn) args))
+    (finish-attach)))
 
 (defn cdt-attach
   ([port] (cdt-attach "localhost" port))
@@ -154,7 +167,8 @@
        (.setValue (.get args "port") port)
        (.setValue (.get args "hostname") hostname)
        (reset! vm-data (.attach (conn) args))
-       (start-event-handler))))
+       (start-event-handler)
+       (finish-attach))))
 
 (defn find-classes [class-regex]
   (regex-filter class-regex (.allClasses (vm))))
@@ -184,18 +198,42 @@
 
 (defrecord BpSpec [methods bps])
 
+(defonce step-list (atom nil))
+
+(defn create-step [width depth]
+  (doto (.createStepRequest
+         (.eventRequestManager (vm)) (ct)
+         width depth)
+    (.setSuspendPolicy EventRequest/SUSPEND_EVENT_THREAD)
+    (.setEnabled false)))
+
+(defn init-step-list []
+  (reset! step-list
+          {:stepi (create-step StepRequest/STEP_MIN StepRequest/STEP_INTO)
+           :into  (create-step StepRequest/STEP_LINE StepRequest/STEP_INTO)
+           :over  (create-step StepRequest/STEP_LINE StepRequest/STEP_OVER)
+           :finish  (create-step StepRequest/STEP_LINE StepRequest/STEP_OUT)}))
+
+(defn do-step [type]
+  (fn []
+    (.setEnabled (@step-list type) true)
+    (cont)))
+
+(def stepi (do-step :stepi))
+(def step (do-step :into))
+(def step-over (do-step :over))
+(def finish (do-step :finish))
+
+(defn disable-stepping []
+  (doseq [s (vals @step-list)]
+    (.setEnabled s false)))
+
 (defonce bp-list (atom {}))
 
 (defn merge-with-exception [short-name]
   (partial merge-with
            #(throw (IllegalArgumentException.
                     (str "bp-list already contains a " short-name)))))
-(defn create-step []
-  (doto (.createStepRequest
-         (.eventRequestManager (vm)) (ct)
-         StepRequest/STEP_LINE StepRequest/STEP_INTO )
-    (.setSuspendPolicy EventRequest/SUSPEND_EVENT_THREAD)
-    (.setEnabled true)))
 
 (defn create-bp [m]
   (doto (.createBreakpointRequest
@@ -279,8 +317,6 @@
 (defn remote-swap-root [v arg-list]
   (remote-invoke (constantly v) sroot arg-list (ct) (cf)))
 
-(declare reval-ret* reval-ret-str reval-ret-obj)
-
 (defn get-file-name [frame]
   (let [sp (try (.sourcePath (.location frame))
                 (catch Exception e "source not found"))]
@@ -332,11 +368,15 @@
     p))
 
 
-(defn add-local-to-map [m l]
-  (let [val (convert-primitives (val l))]
-    (remote-assoc
-     (make-arg-list m
-                    (remote-create-str (.name (key l))) val) (ct) (cf))))
+(defn add-local-to-map
+  ([m l]
+     (let [val (convert-primitives (val l))
+           name (.name (key l))]
+       (add-local-to-map m name val)))
+  ([m name val]
+     (remote-assoc
+      (make-arg-list m
+                     (remote-create-str name) val) (ct) (cf))))
 
 (def cdt-sym (atom nil))
 
@@ -356,17 +396,23 @@
   (let [locals-and-closures (gen-locals-and-closures)
         sym (get-cdt-sym)
         v (reval-ret-obj `(intern '~'user '~sym {}) false)
-        new-map (reduce add-local-to-map (remote-get v) locals-and-closures)]
+        this (.thisObject (.frame (ct) (cf)))
+        new-map (reduce add-local-to-map (remote-get v) locals-and-closures)
+        new-map (add-local-to-map new-map "this" this)]
+    (debug-repl)
     (remote-swap-root v (make-arg-list new-map))
     locals-and-closures))
+
+(defn gen-locals-and-this [locals]
+  (into ["this"]
+        (map (fn [[k _]] (.name k)) locals)))
 
 (defn gen-local-bindings [sym locals]
   (into [] (mapcat
             (fn [l]
-              (let [local-name (.name (key l))]
-                `[~(symbol local-name)
-                  ((var-get (ns-resolve '~'user '~sym)) ~local-name)]))
-            locals)))
+              `[~(symbol l)
+                ((var-get (ns-resolve '~'user '~sym)) ~l)])
+            (gen-locals-and-this locals))))
 
 (defn gen-form-with-locals [form]
   (let [locals (add-locals-to-map)]
@@ -417,16 +463,20 @@
               (read-string (fixup-string-reference-impl
                             (reval-ret-str (local-names) true))))))
 
+(defn print-frame
+  ([] (print-frame (cf) (.frame (ct) (cf))))
+  ([i f]
+     (let [l (.location f)
+           ln (try (str (local-names i)) (catch Exception e "[]"))
+           fname (get-file-name f)
+           c (.name (.declaringType (.method l)))]
+       (printf "%3d %s %s %s %s:%d\n" i c (.name (.method l))
+               ln fname (.lineNumber l)))))
 (defn print-frames
   ([] (print-frames (ct)))
   ([thread]
      (doseq [[i f] (indexed (.frames thread))]
-       (let [l (.location f)
-             ln (try (str (local-names i)) (catch Exception e "[]"))
-             fname (get-file-name f)
-             c (.name (.declaringType (.method l)))]
-         (printf "%3d %s %s %s %s:%d\n" i c (.name (.method l))
-                 ln fname (.lineNumber l))))))
+       (print-frame i f))))
 
 (defmacro reval
   ([form]
@@ -459,7 +509,6 @@
 (use 'alex-and-georges.debug-repl)
 (import sun.jvm.hotspot.jdi.FieldImpl)
 
-(declare show-data)
 (defn handle-field [prev [depth limit data]]
   (show-data  (.getValue prev data) [(inc depth) limit (.getValue prev data)]))
 
