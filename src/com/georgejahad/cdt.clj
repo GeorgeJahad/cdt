@@ -368,10 +368,11 @@
     p))
 
 
+;; probably don't need second arity
 (defn add-local-to-map
   ([m l]
      (let [val (convert-primitives (val l))
-           name (.name (key l))]
+           name (key l)]
        (add-local-to-map m name val)))
   ([m name val]
      (remote-assoc
@@ -386,10 +387,15 @@
               (symbol (read-string
                        (str (reval-ret-str `(gensym "cdt-") false)))))))
 
+(defn gen-locals-and-this [locals]
+  (into ["this"]
+        (map (fn [[k _]] (.name k)) locals)))
+
 (defn gen-locals-and-closures
   ([] (gen-locals-and-closures (cf)))
   ([f] (let [frame (.frame (ct) f)
-             locals (.getValues frame (.visibleVariables frame))]
+             locals (.getValues frame (.visibleVariables frame))
+             locals (gen-locals-and-this locals)]
          (merge {} locals (gen-closure-map f)))))
 
 (defn add-locals-to-map []
@@ -397,22 +403,15 @@
         sym (get-cdt-sym)
         v (reval-ret-obj `(intern '~'user '~sym {}) false)
         this (.thisObject (.frame (ct) (cf)))
-        new-map (reduce add-local-to-map (remote-get v) locals-and-closures)
-        new-map (add-local-to-map new-map "this" this)]
-    (debug-repl)
+        new-map (reduce add-local-to-map (remote-get v) locals-and-closures)]
     (remote-swap-root v (make-arg-list new-map))
     locals-and-closures))
 
-(defn gen-locals-and-this [locals]
-  (into ["this"]
-        (map (fn [[k _]] (.name k)) locals)))
-
 (defn gen-local-bindings [sym locals]
-  (into [] (mapcat
-            (fn [l]
-              `[~(symbol l)
-                ((var-get (ns-resolve '~'user '~sym)) ~l)])
-            (gen-locals-and-this locals))))
+  (into []
+        (mapcat
+         (fn [l] `[~(symbol l) ((var-get (ns-resolve '~'user '~sym)) ~l)])
+         locals)))
 
 (defn gen-form-with-locals [form]
   (let [locals (add-locals-to-map)]
@@ -454,7 +453,7 @@
   ([] (local-names (cf)))
   ([f] (->> (gen-locals-and-closures f)
             keys
-            (map #(symbol (.name %)))
+            (map symbol)
             (into []))))
 
 (defn locals []
