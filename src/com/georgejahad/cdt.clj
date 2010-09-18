@@ -341,11 +341,17 @@
              (if (clojure-frame? frame fields)
                (remove-default-fields fields)))))))
 
+(defn fix-values [values]
+  (into {} (map (fn [[k v]] [(.name k) v]) values)))
+
 (defn gen-closure-map
   ([] (gen-closure-map (cf)))
   ([f] (when-let [obj (.thisObject (.frame (ct) f))]
-         (when-let [fields (gen-closure-field-list f)]
-           (.getValues obj fields)))))
+         (let [this-map {"this" obj}]
+           (if-let [fields (gen-closure-field-list f)]
+             (merge this-map
+                    (fix-values (.getValues obj fields)))
+             this-map)))))
 
 (defn convert-type [type val]
   (reval-ret-obj (list 'new type (str val)) false))
@@ -368,16 +374,11 @@
     p))
 
 
-;; probably don't need second arity
-(defn add-local-to-map
-  ([m l]
-     (let [val (convert-primitives (val l))
-           name (key l)]
-       (add-local-to-map m name val)))
-  ([m name val]
-     (remote-assoc
-      (make-arg-list m
-                     (remote-create-str name) val) (ct) (cf))))
+(defn add-local-to-map [m l]
+  (let [val (convert-primitives (val l))]
+    (remote-assoc
+     (make-arg-list m
+                    (remote-create-str (key l)) val) (ct) (cf))))
 
 (def cdt-sym (atom nil))
 
@@ -387,31 +388,27 @@
               (symbol (read-string
                        (str (reval-ret-str `(gensym "cdt-") false)))))))
 
-(defn gen-locals-and-this [locals]
-  (into ["this"]
-        (map (fn [[k _]] (.name k)) locals)))
-
 (defn gen-locals-and-closures
   ([] (gen-locals-and-closures (cf)))
   ([f] (let [frame (.frame (ct) f)
-             locals (.getValues frame (.visibleVariables frame))
-             locals (gen-locals-and-this locals)]
-         (merge {} locals (gen-closure-map f)))))
+             locals (fix-values (.getValues frame (.visibleVariables frame)))]
+         (merge locals (gen-closure-map f)))))
 
 (defn add-locals-to-map []
   (let [locals-and-closures (gen-locals-and-closures)
         sym (get-cdt-sym)
         v (reval-ret-obj `(intern '~'user '~sym {}) false)
-        this (.thisObject (.frame (ct) (cf)))
         new-map (reduce add-local-to-map (remote-get v) locals-and-closures)]
     (remote-swap-root v (make-arg-list new-map))
     locals-and-closures))
 
 (defn gen-local-bindings [sym locals]
-  (into []
-        (mapcat
-         (fn [l] `[~(symbol l) ((var-get (ns-resolve '~'user '~sym)) ~l)])
-         locals)))
+  (into [] (mapcat
+            (fn [l]
+              (let [local-name (key l)]
+                `[~(symbol local-name)
+                  ((var-get (ns-resolve '~'user '~sym)) ~local-name)]))
+            locals)))
 
 (defn gen-form-with-locals [form]
   (let [locals (add-locals-to-map)]
