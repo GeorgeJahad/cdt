@@ -15,7 +15,7 @@
            clojure.lang.Compiler))
 
 (declare reval-ret* reval-ret-str reval-ret-obj
-         disable-stepping show-data init-step-list print-frame)
+         disable-stepping show-data update-step-list print-frame)
 
 ;; This handles the fact that tools.jar is a global dependency that
 ;; can't really be in a repo:
@@ -59,10 +59,14 @@
 
 (defonce current-thread (atom nil))
 
-(defn set-current-thread [thread-num]
-  (reset! current-thread (nth (list-threads) thread-num)))
+(defn set-current-thread [t]
+  (reset! current-thread t)
+  (update-step-list))
 
-(def sct set-current-thread)
+(defn set-current-thread-num [thread-num]
+  (sct (nth (list-threads) thread-num)))
+
+(def sct set-current-thread-num)
 
 (defn ct [] @current-thread)
 
@@ -127,7 +131,7 @@
 (defn finish-set [s]
   (let [e (first (iterator-seq (.eventIterator s)))]
     (set-current-frame 0)
-    (reset! current-thread (get-thread e))
+    (set-current-thread (get-thread e))
     (disable-stepping)
     (print-current-location)))
 
@@ -151,16 +155,12 @@
   (reset! event-handler (Thread. handle-events))
   (.start @event-handler))
 
-(defn finish-attach []
-  (init-step-list))
-
 (defn cdt-attach-core []
   (reset! conn-data (first (get-connectors #"SADebugServerAttachingConnector")))
   (let [args (.defaultArguments (conn))]
     (println args)
     (.setValue (.get args "debugServerName") "localhost")
-    (reset! vm-data (.attach (conn) args))
-    (finish-attach)))
+    (reset! vm-data (.attach (conn) args))))
 
 (defn cdt-attach
   ([port] (cdt-attach "localhost" port))
@@ -170,8 +170,7 @@
        (.setValue (.get args "port") port)
        (.setValue (.get args "hostname") hostname)
        (reset! vm-data (.attach (conn) args))
-       (start-event-handler)
-       (finish-attach))))
+       (start-event-handler))))
 
 (defn find-classes [class-regex]
   (regex-filter class-regex (.allClasses (vm))))
@@ -201,7 +200,7 @@
 
 (defrecord BpSpec [methods bps])
 
-(defonce step-list (atom nil))
+(defonce step-list (atom {}))
 
 (defn create-step [width depth]
   (doto (.createStepRequest
@@ -210,16 +209,19 @@
     (.setSuspendPolicy EventRequest/SUSPEND_EVENT_THREAD)
     (.setEnabled false)))
 
-(defn init-step-list []
-  (reset! step-list
-          {:stepi (create-step StepRequest/STEP_MIN StepRequest/STEP_INTO)
-           :into  (create-step StepRequest/STEP_LINE StepRequest/STEP_INTO)
-           :over  (create-step StepRequest/STEP_LINE StepRequest/STEP_OVER)
-           :finish  (create-step StepRequest/STEP_LINE StepRequest/STEP_OUT)}))
+(defn update-step-list []
+  (if-not (@step-list (ct))
+    (swap! step-list assoc
+           (ct)
+           {:stepi (create-step StepRequest/STEP_MIN StepRequest/STEP_INTO)
+            :into  (create-step StepRequest/STEP_LINE StepRequest/STEP_INTO)
+            :over  (create-step StepRequest/STEP_LINE StepRequest/STEP_OVER)
+            :finish (create-step
+                     StepRequest/STEP_LINE StepRequest/STEP_OUT)})))
 
 (defn do-step [type]
   (fn []
-    (.setEnabled (@step-list type) true)
+    (.setEnabled ((@step-list (ct)) type) true)
     (cont)))
 
 (def stepi (do-step :stepi))
@@ -228,7 +230,7 @@
 (def finish (do-step :finish))
 
 (defn disable-stepping []
-  (doseq [s (vals @step-list)]
+  (doseq [t (vals @step-list) s (vals t)]
     (.setEnabled s false)))
 
 (defonce bp-list (atom {}))
@@ -257,7 +259,7 @@
         m (regex-filter #"(invoke|doInvoke)" (.methods c))] m))
 
 
-(defn set-bp-locations [sym locations] (debug-repl)
+(defn set-bp-locations [sym locations]
   (let [bps (doall (map create-bp locations))]
     (if (seq bps)
       (do
@@ -279,19 +281,22 @@
   (str2/replace c "/" "."))
 
 (defn get-class [fname]
-  (->> (.split @source-path ":")
-       (map #(re-find (re-pattern (str % "/(.*)(.clj|.java)")) fname))
-       (remove nil?)
-       first
-       second
-       fix-class
-       re-pattern))
+  (if (= @source-path "")
+    (throw (IllegalStateException.
+            "source-path must be set before calling line-bp"))
+    (->> (.split @source-path ":")
+         (map #(re-find (re-pattern (str % "/(.*)(.clj|.java)")) fname))
+         (remove nil?)
+         first
+         second
+         fix-class
+         re-pattern)))
 
 (defn line-bp [fname line]
   (let [c (get-class fname)
         sym (symbol (str c ":" line))
         classes (filter #(re-find c (.name %)) (.allClasses (vm)))
-        locations (mapcat #(.locationsOfLine % line) classes)] (debug-repl)
+        locations (mapcat #(.locationsOfLine % line) classes)]
     (when-not (set-bp-locations sym locations)
       (println "no breakpoints found at line" line))))
 
