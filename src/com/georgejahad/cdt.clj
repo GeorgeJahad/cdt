@@ -115,7 +115,7 @@
 (defn handle-exception [e]
   (println "\n\nException" e
            (.catchLocation e) "hit\n\n")
-  #_(.exec (Runtime/getRuntime) "/tmp/g3"))
+  #_(.exec (Runtime/getRuntime) "/tmp/cdt.script"))
 
 (defn handle-event [e]
   (Thread/yield)
