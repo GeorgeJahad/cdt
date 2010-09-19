@@ -140,7 +140,10 @@
          (doseq [i (iterator-seq (.eventIterator s))]
            (handle-event i))
          (finish-set s))
-       (catch Exception e (println "exception in event handler" e))))))
+       (catch Exception e
+         (do
+           (println "exception in event handler" e)
+           (Thread/sleep 500)))))))
 
 (defonce event-handler (atom nil))
 
@@ -235,9 +238,9 @@
            #(throw (IllegalArgumentException.
                     (str "bp-list already contains a " short-name)))))
 
-(defn create-bp [m]
+(defn create-bp [l]
   (doto (.createBreakpointRequest
-         (.eventRequestManager (vm)) (.location m))
+         (.eventRequestManager (vm)) l)
     (.setSuspendPolicy EventRequest/SUSPEND_EVENT_THREAD)
     (.setEnabled true)))
 
@@ -253,18 +256,44 @@
   (for [c (find-classes (gen-class-pattern sym))
         m (regex-filter #"(invoke|doInvoke)" (.methods c))] m))
 
-(defn set-bp-fn [sym]
-  (let [methods (get-methods sym)
-        bps (doall (map create-bp methods))]
-    (if (seq methods)
+
+(defn set-bp-locations [sym locations] (debug-repl)
+  (let [bps (doall (map create-bp locations))]
+    (if (seq bps)
       (do
-        (swap! bp-list (merge-with-exception sym) {sym (BpSpec. methods bps)})
-        (println "bp set on" methods))
+        (println "bp set on" locations)
+        (swap! bp-list
+               (merge-with-exception sym) {sym (BpSpec. locations bps)}))
+      false)))
+
+(defn set-bp-sym [sym]
+  (let [methods (get-methods sym)]
+    (when-not (set-bp-locations sym (map #(.location %) methods))
       (println "no methods found for" sym))))
 
 (defmacro set-bp
   [sym]
-  `(set-bp-fn '~sym))
+  `(set-bp-sym '~sym))
+
+(defn fix-class [c]
+  (str2/replace c "/" "."))
+
+(defn get-class [fname]
+  (->> (.split @source-path ":")
+       (map #(re-find (re-pattern (str % "/(.*)(.clj|.java)")) fname))
+       (remove nil?)
+       first
+       second
+       fix-class
+       re-pattern))
+
+(defn line-bp [fname line]
+  (let [c (get-class fname)
+        sym (symbol (str c ":" line))
+        classes (filter #(re-find c (.name %)) (.allClasses (vm)))
+        locations (mapcat #(.locationsOfLine % line) classes)] (debug-repl)
+    (when-not (set-bp-locations sym locations)
+      (println "no breakpoints found at line" line))))
 
 (defn delete-bp-fn [sym]
   (doseq [bp (:bps (@bp-list sym))]
@@ -342,7 +371,7 @@
                (remove-default-fields fields)))))))
 
 (defn fix-values [values]
-  (into {} (map (fn [[k v]] [(.name k) v]) values)))
+  (into {} (for [[k v] values] [(.name k) v])))
 
 (defn gen-closure-map
   ([] (gen-closure-map (cf)))
@@ -468,6 +497,7 @@
            c (.name (.declaringType (.method l)))]
        (printf "%3d %s %s %s %s:%d\n" i c (.name (.method l))
                ln fname (.lineNumber l)))))
+
 (defn print-frames
   ([] (print-frames (ct)))
   ([thread]
