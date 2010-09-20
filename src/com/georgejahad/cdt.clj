@@ -64,7 +64,7 @@
   (update-step-list))
 
 (defn set-current-thread-num [thread-num]
-  (sct (nth (list-threads) thread-num)))
+  (set-current-thread (nth (list-threads) thread-num)))
 
 (def sct set-current-thread-num)
 
@@ -509,18 +509,20 @@
      (doseq [[i f] (indexed (.frames thread))]
        (print-frame i f))))
 
-(defmacro reval
-  ([form]
-     `(reval ~form true))
-  ([form locals?]
-     `(read-string (fixup-string-reference-impl
-                    (reval-ret-str '~form ~locals?)))))
-
 (defmacro reval-println
   ([form]
      `(reval-println ~form true))
   ([form locals?]
      `(println (str (reval-ret-str '~form ~locals?)))))
+
+(defmacro reval
+  ([form]
+     `(reval ~form true))
+  ([form locals?]
+     `(try (read-string (fixup-string-reference-impl
+                         (reval-ret-str '~form ~locals?)))
+           (catch Exception e#
+             (reval-println ~form ~locals?)))))
 
 (start-handling-break)
 (add-break-thread!)
