@@ -14,6 +14,8 @@
   (:import java.util.ArrayList
            clojure.lang.Compiler))
 
+(use 'alex-and-georges.debug-repl)
+
 (declare reval-ret* reval-ret-str reval-ret-obj
          disable-stepping show-data update-step-list print-frame)
 
@@ -87,14 +89,16 @@
 (defn get-source []
   (let [file (.sourcePath (.location (.frame (ct) (cf))))
         paths (.split @source-path ":")]
-    (first (filter #(.exists (java.io.File. %))
-                   (for [p paths] (str p "/" file))))))
+    (if (= (first file) \/)
+      file
+      (first (filter #(.exists (java.io.File. %))
+                     (for [p paths] (str p "/" file)))))))
 
 (defn print-current-location []
   (try
    (let [line (.lineNumber (.location (.frame (ct) (cf))))]
      (if-let [path (get-source)]
-       (println "CDT location is" (format "%s:%d" path line))
+       (println "CDT location is" (format "%s:%d:" path line))
        (println "Source not found")))
    (catch Exception _ (println "Source not found")))
   (print-frame))
@@ -252,7 +256,7 @@
 
 (defn gen-class-pattern [sym]
   (let [s (munge-sym sym)]
-    (re-pattern (str "^" s "$"))))
+    (re-pattern (str "^" s))))
 
 (defn get-methods [sym]
   (for [c (find-classes (gen-class-pattern sym))
@@ -292,11 +296,16 @@
          fix-class
          re-pattern)))
 
+(defn get-locations [line class]
+  (try
+   (.locationsOfLine class line)
+   (catch com.sun.jdi.AbsentInformationException _ [])))
+
 (defn line-bp [fname line]
   (let [c (get-class fname)
         sym (symbol (str c ":" line))
         classes (filter #(re-find c (.name %)) (.allClasses (vm)))
-        locations (mapcat #(.locationsOfLine % line) classes)]
+        locations (mapcat (partial get-locations line) classes)]
     (when-not (set-bp-locations sym locations)
       (println "no breakpoints found at line" line))))
 
@@ -375,8 +384,14 @@
              (if (clojure-frame? frame fields)
                (remove-default-fields fields)))))))
 
+(def unmunge-seq
+     (reverse (sort-by second compare clojure.lang.Compiler/CHAR_MAP)))
+
+(defn unmunge [n]
+  (reduce (fn[n [k v]] (str2/replace n v (str k))) n unmunge-seq))
+
 (defn fix-values [values]
-  (into {} (for [[k v] values] [(.name k) v])))
+  (into {} (for [[k v] values] [(unmunge (.name k)) v])))
 
 (defn gen-closure-map
   ([] (gen-closure-map (cf)))
@@ -527,46 +542,49 @@
 (start-handling-break)
 (add-break-thread!)
 
-(defn class-test [string data]
-  (= (str (class data)) (str "class sun.jvm.hotspot.jdi." string)))
+(comment
+  (defn class-test [string data]
+    (= (str (class data)) (str "class sun.jvm.hotspot.jdi." string)))
 
-(def field? (partial class-test "FieldImpl"))
-(def array-ref? (partial class-test "ArrayReferenceImpl"))
-(def string-ref? (partial class-test "StringReferenceImpl"))
+  (def field? (partial class-test "FieldImpl"))
+  (def array-ref? (partial class-test "ArrayReferenceImpl"))
+  (def string-ref? (partial class-test "StringReferenceImpl"))
 
-(defn seqable [data]
-  (try
-   (.allFields (.referenceType data))
-   (catch Exception _ false)))
+  (defn seqable [data]
+    (try
+     (.allFields (.referenceType data))
+     (catch Exception _ false)))
 
-(use 'alex-and-georges.debug-repl)
-(import sun.jvm.hotspot.jdi.FieldImpl)
 
-(defn handle-field [prev [depth limit data]]
-  (show-data  (.getValue prev data) [(inc depth) limit (.getValue prev data)]))
+  #_(use 'alex-and-georges.debug-repl)
+  (import sun.jvm.hotspot.jdi.FieldImpl)
 
-(def gbug (atom nil))
-(defn show-data [prev [depth limit data]]
-  #_  (println data)
-  (when @gbug
-    (debug-repl))
-  (cond
-    (> depth limit)
-    (do
-      (println "depth " depth "reached")
-      [depth limit data])
-    (field? data)
-    (do
-      #_      (println "field found ")
-      (handle-field prev [depth limit data]))
-    (array-ref? data)
-    (map #(show-data data [(inc depth) limit %])
-         (.getValues data))
-    (string-ref? data)
-    [depth limit data]
-    :else
-    (if-let [fields (seqable data)]
-      (map #(show-data data [(inc depth) limit %])
-           fields)
-      [depth limit data])))
+  (defn handle-field [prev [depth limit data]]
+    (show-data  (.getValue prev data) [(inc depth) limit (.getValue prev data)]))
 
+  (def gbug (atom nil))
+  (defn show-data [prev [depth limit data]]
+    #_  (println data)
+    (when @gbug
+      #_    (debug-repl))
+    (cond
+     (> depth limit)
+     (do
+       (println "depth " depth "reached")
+       [depth limit data])
+     (field? data)
+     (do
+       #_      (println "field found ")
+       (handle-field prev [depth limit data]))
+     (array-ref? data)
+     (map #(show-data data [(inc depth) limit %])
+          (.getValues data))
+     (string-ref? data)
+     [depth limit data]
+     :else
+     (if-let [fields (seqable data)]
+       (map #(show-data data [(inc depth) limit %])
+            fields)
+       [depth limit data])))
+
+)

@@ -11,6 +11,19 @@
 ;; concept working
 
 (require 'gud)
+(require 'thingatpt)
+
+(defun cljdb-repl ()
+  (interactive)
+  (switch-to-buffer gud-comint-buffer))
+
+(defun cljdb-here ()
+  (interactive)
+  (gud-call "(print-current-location)"))
+
+(defun cljdb-print ()
+  (interactive)
+  (gud-call (format "(reval %s)" (thing-at-point 'sexp))))
 
 (defun cdt (command-line)
   "Run cdt with command line COMMAND-LINE in a buffer.
@@ -46,7 +59,7 @@ switch is given, omit all whitespace between it and its value."
 	    (gud-jdb-parse-classpath-string gud-jdb-sourcepath)))
 
 
-  (gud-def gud-break  "(line-bp %d/%f %l)"  "\C-b" "breakpoint on current line")
+  (gud-def gud-break  "(line-bp \"%d%f\" %l)"  "\C-b" "breakpoint on current line")
   (gud-def gud-stepi  "(stepi)"         "\C-i" "Step the smallest possible increment.")
   (gud-def gud-step   "(step)"          "\C-s" "Step one source line with display.")
   (gud-def gud-next   "(step-over)"     "\C-n" "Step one line (skip functions).")
@@ -58,7 +71,11 @@ switch is given, omit all whitespace between it and its value."
   (gud-def gud-down2  "(down)"          "\C-d" "Down one stack frame.")
   (gud-def gud-this   "(reval this)"    "\C-t" "print this pointer")
   (gud-def gud-locals "(locals)"        "\C-l" "print locals")
-  (gud-def gud-print  "(reval %e)"      "\C-p" "Evaluate clojure expression at point.")
+;  (gud-def gud-print  "(reval %e)"      "\C-p" "Evaluate clojure expression at point.")
+
+  (global-set-key (vconcat gud-key-prefix "\C-h") 'cljdb-here)
+  (global-set-key (vconcat gud-key-prefix "\C-r") 'cljdb-repl)
+  (global-set-key (vconcat gud-key-prefix "\C-p") 'cljdb-print)
 
   (setq comint-prompt-regexp "^[^ ]*=>")
 
@@ -118,7 +135,7 @@ switch is given, omit all whitespace between it and its value."
 
 	;; Do we see a marker?
 	(string-match
-	 "CDT location is \\(.+\\):\\(.+\\)"
+	 "CDT location is \\(.+\\):\\(.+\\):"
 	 gud-marker-acc)
 
       ;; A good marker is one that:
