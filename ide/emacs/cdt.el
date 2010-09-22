@@ -6,10 +6,6 @@
 ;;; License as distributed with Emacs (press C-h C-c to view it).
 ;;;
 
-
-;; This is a pretty bad hack job; just wanted to get the proof of
-;; concept working
-
 (require 'gud)
 (require 'thingatpt)
 
