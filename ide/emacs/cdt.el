@@ -33,31 +33,10 @@ switch is given, omit all whitespace between it and its value."
 
   (interactive
    (list (gud-query-cmdline 'cdt)))
-  (setq gud-jdb-classpath nil)
-  (setq gud-jdb-sourcepath nil)
-  
-  ;; Set gud-jdb-classpath from the CLASSPATH environment variable,
-  ;; if CLASSPATH is set.
-  (setq gud-jdb-classpath-string (getenv "CLASSPATH"))
-  (if gud-jdb-classpath-string
-      (setq gud-jdb-classpath
-	    (gud-jdb-parse-classpath-string gud-jdb-classpath-string)))
-  (setq gud-jdb-classpath-string nil)	; prepare for next
 
   (gud-common-init command-line 'gud-jdb-massage-args
 		   'gud-jdb-marker-filter)
   (set (make-local-variable 'gud-minor-mode) 'jdb)
-
-  ;; If a -classpath option was provided, set gud-jdb-classpath
-  (if gud-jdb-classpath-string
-      (setq gud-jdb-classpath
-	    (gud-jdb-parse-classpath-string gud-jdb-classpath-string)))
-  (setq gud-jdb-classpath-string nil)	; prepare for next
-  ;; If a -sourcepath option was provided, parse it
-  (if gud-jdb-sourcepath
-      (setq gud-jdb-sourcepath
-	    (gud-jdb-parse-classpath-string gud-jdb-sourcepath)))
-
 
   (gud-def gud-break  "(line-bp \"%d%f\" %l)"  "\C-b" "breakpoint on current line")
   (gud-def gud-stepi  "(stepi)"         "\C-i" "Step the smallest possible increment.")
@@ -71,7 +50,6 @@ switch is given, omit all whitespace between it and its value."
   (gud-def gud-down2  "(down)"          "\C-d" "Down one stack frame.")
   (gud-def gud-this   "(reval this)"    "\C-t" "print this pointer")
   (gud-def gud-locals "(locals)"        "\C-l" "print locals")
-;  (gud-def gud-print  "(reval %e)"      "\C-p" "Evaluate clojure expression at point.")
 
   (global-set-key (vconcat gud-key-prefix "\C-h") 'cljdb-here)
   (global-set-key (vconcat gud-key-prefix "\C-r") 'cljdb-repl)
@@ -80,24 +58,7 @@ switch is given, omit all whitespace between it and its value."
   (setq comint-prompt-regexp "^[^ ]*=>")
 
   (setq paragraph-start comint-prompt-regexp)
-  (run-hooks 'jdb-mode-hook)
-
-  (if gud-jdb-use-classpath
-      ;; Get the classpath information from the debugger
-      (progn
-	(if (string-match "-attach" command-line)
-	    (gud-call "classpath"))
-	(fset 'gud-jdb-find-source
-	      'gud-jdb-find-source-using-classpath))
-
-    ;; Else create and bind the class/source association list as well
-    ;; as the source file list.
-    (setq gud-jdb-class-source-alist
-	  (gud-jdb-build-class-source-alist
-	   (setq gud-jdb-source-files
-		 (gud-jdb-build-source-files-list gud-jdb-directories
-						  "\\.java$"))))
-    (fset 'gud-jdb-find-source 'gud-jdb-find-source-file)))
+  (run-hooks 'jdb-mode-hook))
 	  
 (setq cdt-el-version .1)
 
@@ -109,26 +70,6 @@ switch is given, omit all whitespace between it and its value."
 	    (concat gud-marker-acc string)
 	  string))
 
-  ;;  GBJ NOTE: could this happen multiple times??
-  ;; Add stack trace to the breakpoint string because it has more info
-  ;; (if   (string-match jdb-break-step-string gud-marker-acc)
-  ;;     (gud-call "where"))
-
-  ;; ;; Look for classpath information until gud-jdb-classpath-string is found
-  ;; ;; (interactive, multiple settings of classpath from jdb
-  ;; ;;  not supported/followed)
-  ;; (if (and gud-jdb-use-classpath
-  ;; 	   (not gud-jdb-classpath-string)
-  ;; 	   (or (string-match "classpath:[ \t[]+\\([^]]+\\)" gud-marker-acc)
-  ;; 	       (string-match "-classpath[ \t\"]+\\([^ \"]+\\)" gud-marker-acc)))
-  ;;     (setq gud-jdb-classpath
-  ;; 	    (gud-jdb-parse-classpath-string
-  ;; 	     (setq gud-jdb-classpath-string
-  ;; 		   (match-string 1 gud-marker-acc)))))
-
-  ;; We process STRING from left to right.  Each time through the
-  ;; following loop we process at most one marker. After we've found a
-  ;; marker, delete gud-marker-acc up to and including the match
   (let (file-found)
     ;; Process each complete marker in the input.
     (while
@@ -138,9 +79,6 @@ switch is given, omit all whitespace between it and its value."
 	 "CDT location is \\(.+\\):\\(.+\\):"
 	 gud-marker-acc)
 
-      ;; A good marker is one that:
-      ;; has an "[n] " prefix and n is the lowest prefix seen
-      ;;    since the last prompt
       ;; Figure out the line on which to position the debugging arrow.
       ;; Return the info as a cons of the form:
       ;;
