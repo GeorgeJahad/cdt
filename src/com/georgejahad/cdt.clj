@@ -537,7 +537,10 @@
      `(try (read-string (fixup-string-reference-impl
                          (reval-ret-str '~form ~locals?)))
            (catch Exception e#
-             (reval-println ~form ~locals?)))))
+             (println-str (str (reval-ret-str '~form ~locals?)))))))
+
+(defmacro reval-display [form]
+  `(println (str "CDT reval returned " (reval ~form))))
 
 (start-handling-break)
 (add-break-thread!)

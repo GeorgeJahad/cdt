@@ -19,7 +19,7 @@
 
 (defun cljdb-print ()
   (interactive)
-  (gud-call (format "(reval %s)" (thing-at-point 'sexp))))
+  (gud-call (format "(reval-display %s)" (thing-at-point 'sexp))))
 
 (defun cdt (command-line)
   "Run cdt with command line COMMAND-LINE in a buffer.
@@ -44,7 +44,7 @@ switch is given, omit all whitespace between it and its value."
   (gud-def gud-up2    "(up)"            "\C-u" "Up one stack frame.")
   (gud-def gud-down   "(down)"          ">"    "Down one stack frame.")
   (gud-def gud-down2  "(down)"          "\C-d" "Down one stack frame.")
-  (gud-def gud-this   "(reval this)"    "\C-t" "print this pointer")
+  (gud-def gud-this   "(reval-display this)"   "\C-t" "print this pointer")
   (gud-def gud-locals "(locals)"        "\C-l" "print locals")
 
   (global-set-key (vconcat gud-key-prefix "\C-h") 'cljdb-here)
@@ -55,7 +55,7 @@ switch is given, omit all whitespace between it and its value."
 
   (setq paragraph-start comint-prompt-regexp)
   (run-hooks 'jdb-mode-hook))
-	  
+
 (setq cdt-el-version .1)
 
 (defun gud-jdb-marker-filter (string)
@@ -85,6 +85,16 @@ switch is given, omit all whitespace between it and its value."
 		(cons (match-string 1 gud-marker-acc)
 		      (string-to-number (match-string 2 gud-marker-acc)))))
 
+
+      ;; Set the accumulator to the remaining text.
+      (setq gud-marker-acc (substring gud-marker-acc (match-end 0))))
+
+    (while
+	(string-match
+	 "CDT reval returned \\(.+\\)$"
+	 gud-marker-acc)
+      (if (match-string 1 gud-marker-acc)
+	  (message (match-string 1 gud-marker-acc)))
 
       ;; Set the accumulator to the remaining text.
       (setq gud-marker-acc (substring gud-marker-acc (match-end 0))))
