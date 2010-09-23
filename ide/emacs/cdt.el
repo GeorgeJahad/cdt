@@ -58,6 +58,27 @@ switch is given, omit all whitespace between it and its value."
 
 (setq cdt-el-version .1)
 
+(defun set-frame ()
+  (setq gud-last-frame
+	(cons (match-string 1 gud-marker-acc)
+	      (string-to-number (match-string 2 gud-marker-acc)))))
+
+(defun display-message ()
+  (message (match-string 1 gud-marker-acc)))
+
+(setq gbjc 0)
+(defun display-no-source ()
+  (setq gbjc (+ 1 gbjc))
+  (message "Source not found"))
+
+(defun filter-input (regex action)
+  (while (string-match regex gud-marker-acc)
+    (if (match-string 1 gud-marker-acc)
+	(funcall action))
+    ;; Set the accumulator to the remaining text.
+    (setq gud-marker-acc (substring gud-marker-acc (match-end 0)))))
+
+
 (defun gud-jdb-marker-filter (string)
 
   ;; Build up the accumulator.
@@ -68,36 +89,11 @@ switch is given, omit all whitespace between it and its value."
 
   (let (file-found)
     ;; Process each complete marker in the input.
-    (while
-
-	;; Do we see a marker?
-	(string-match
-	 "CDT location is \\(.+\\):\\(.+\\):"
-	 gud-marker-acc)
-
-      ;; Figure out the line on which to position the debugging arrow.
-      ;; Return the info as a cons of the form:
-      ;;
-      ;;     (<file-name> . <line-number>) .
-
-      (if (match-string 1 gud-marker-acc)
-	  (setq gud-last-frame
-		(cons (match-string 1 gud-marker-acc)
-		      (string-to-number (match-string 2 gud-marker-acc)))))
+    (filter-input "^Source not found$"  'display-no-source)
+    (filter-input "CDT location is \\(.+\\):\\(.+\\):" 'set-frame)
+    (filter-input "CDT reval returned \\(.+\\)$"  'display-message)
 
 
-      ;; Set the accumulator to the remaining text.
-      (setq gud-marker-acc (substring gud-marker-acc (match-end 0))))
-
-    (while
-	(string-match
-	 "CDT reval returned \\(.+\\)$"
-	 gud-marker-acc)
-      (if (match-string 1 gud-marker-acc)
-	  (message (match-string 1 gud-marker-acc)))
-
-      ;; Set the accumulator to the remaining text.
-      (setq gud-marker-acc (substring gud-marker-acc (match-end 0))))
 
     (if (string-match comint-prompt-regexp gud-marker-acc)
 	(progn
