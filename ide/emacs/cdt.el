@@ -19,7 +19,7 @@
 
 (defun cljdb-print ()
   (interactive)
-  (gud-call (format "(reval-display %s)" (thing-at-point 'sexp))))
+  (gud-call (format "(reval-display '%s)" (thing-at-point 'sexp))))
 
 (defun cdt (command-line)
   "Run cdt with command line COMMAND-LINE in a buffer.
@@ -42,7 +42,7 @@ switch is given, omit all whitespace between it and its value."
   (gud-def gud-finish "(finish)"        "\C-f" "Go until current method returns.")
   (gud-def gud-up2    "(up)"            "\C-u" "Up one stack frame.")
   (gud-def gud-down2  "(down)"          "\C-d" "Down one stack frame.")
-  (gud-def gud-this   "(reval-display this)"   "\C-t" "print this pointer")
+  (gud-def gud-this   "(reval-display 'this)"   "\C-t" "print this pointer")
 
   (global-set-key (vconcat gud-key-prefix "\C-h") 'cljdb-here)
   (global-set-key (vconcat gud-key-prefix "\C-r") 'cljdb-repl)
