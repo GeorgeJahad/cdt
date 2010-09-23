@@ -143,15 +143,15 @@
   (println "starting event handler")
   (let [q (.eventQueue (vm))]
     (while true
-      (try
-       (let [s (.remove q)]
-         (doseq [i (iterator-seq (.eventIterator s))]
-           (handle-event i))
-         (finish-set s))
-       (catch Exception e
-         (do
-           (println "exception in event handler" e)
-           (Thread/sleep 500)))))))
+           (try
+            (let [s (.remove q)]
+              (doseq [i (iterator-seq (.eventIterator s))]
+                (handle-event i))
+              (finish-set s))
+            (catch Exception e
+              (do
+                (println "exception in event handler" e)
+                (Thread/sleep 500)))))))
 
 (defonce event-handler (atom nil))
 
@@ -296,6 +296,9 @@
          fix-class
          re-pattern)))
 
+(defn get-ns []
+  (symbol (str (get-class (get-source)))))
+
 (defn get-locations [line class]
   (try
    (.locationsOfLine class line)
@@ -318,6 +321,14 @@
 (defmacro delete-bp
   [sym]
   `(delete-bp-fn '~sym))
+
+(defn enable-all-breakpoints [type]
+  (doseq [bps @bp-list bp (:bps (val bps))]
+    (.setEnabled bp type)))
+
+(defn delete-all-breakpoints []
+  (doseq [bps @bp-list]
+    (delete-bp-fn (key bps))))
 
 (defonce catch-list (atom {}))
 
@@ -533,14 +544,22 @@
 (defmacro reval
   ([form]
      `(reval ~form true))
-  ([form locals?]
-     `(try (read-string (fixup-string-reference-impl
-                         (reval-ret-str '~form ~locals?)))
-           (catch Exception e#
-             (println-str (str (reval-ret-str '~form ~locals?)))))))
+  ([form locals?] 
+     `(do (enable-all-breakpoints false)
+          (try 
+           (reval-ret-str '(in-ns '~(get-ns)) false)
+           (read-string (fixup-string-reference-impl
+                             (reval-ret-str '~form ~locals?)))
+               (catch Exception e#
+                 (println-str (str (reval-ret-str '~form ~locals?))))
+               (finally
+                (enable-all-breakpoints true))))))
+
+(defn string-nil [x]
+  (if (nil? x) "nil" x))
 
 (defmacro reval-display [form]
-  `(println (str "CDT reval returned " (reval ~form))))
+  `(println (str "CDT reval returned " (string-nil (reval ~form)))))
 
 (start-handling-break)
 (add-break-thread!)
@@ -590,4 +609,4 @@
             fields)
        [depth limit data])))
 
-)
+  )
