@@ -283,7 +283,7 @@
   `(set-bp-sym '~sym))
 
 (defn fix-class [c]
-  (unmunge (str2/replace c "/" ".")))
+  (str2/replace c "/" "."))
 
 (defn get-class [fname]
   (if (= @source-path "")
@@ -298,7 +298,7 @@
          re-pattern)))
 
 (defn get-ns []
-  (symbol (str (get-class (get-source)))))
+  (symbol (unmunge (str (get-class (get-source))))))
 
 (defn get-locations [line class]
   (try
@@ -542,19 +542,34 @@
   ([form locals?]
      `(println (str (reval-ret-str '~form ~locals?)))))
 
+(defn get-current-ns []
+  (symbol (read-string (str (reval-ret-str '(symbol (str *ns*)) false)))))
+
+(defn with-correct-ns [form]
+  `(try 
+    (reval-ret-str '(in-ns '~(get-ns)) false)
+    ~form
+    (finally
+     (reval-ret-str '(in-ns '~(get-current-ns)) false))))
+
+(defn with-breakpoints-disabled [form]
+  `(try
+    (enable-all-breakpoints false)
+    ~form
+    (finally
+     (enable-all-breakpoints true))))
+
 (defmacro reval
   ([form]
      `(reval ~form true))
-  ([form locals?] 
-     `(do (enable-all-breakpoints false)
-          (try 
-           (reval-ret-str '(in-ns '~(get-ns)) false)
+  ([form locals?]
+     (with-correct-ns
+       (with-breakpoints-disabled
+         `(try 
            (read-string (fixup-string-reference-impl
-                             (reval-ret-str '~form ~locals?)))
-               (catch Exception e#
-                 (println-str (str (reval-ret-str '~form ~locals?))))
-               (finally
-                (enable-all-breakpoints true))))))
+                         (reval-ret-str '~form ~locals?)))
+           (catch Exception e#
+             (println-str (str (reval-ret-str '~form ~locals?)))))))))
 
 (defn string-nil [x]
   (if (nil? x) "nil" x))
