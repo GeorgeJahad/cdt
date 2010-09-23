@@ -17,7 +17,8 @@
 (use 'alex-and-georges.debug-repl)
 
 (declare reval-ret* reval-ret-str reval-ret-obj
-         disable-stepping show-data update-step-list print-frame)
+         disable-stepping show-data update-step-list print-frame
+         unmunge)
 
 ;; This handles the fact that tools.jar is a global dependency that
 ;; can't really be in a repo:
@@ -282,7 +283,7 @@
   `(set-bp-sym '~sym))
 
 (defn fix-class [c]
-  (str2/replace c "/" "."))
+  (unmunge (str2/replace c "/" ".")))
 
 (defn get-class [fname]
   (if (= @source-path "")
