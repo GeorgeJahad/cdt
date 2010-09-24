@@ -55,17 +55,27 @@ switch is given, omit all whitespace between it and its value."
 
 (setq cdt-el-version .1)
 
+(defun gud-display-frame ()
+  "Find and obey the last filename-and-line marker from the debugger.
+Obeying it means displaying in another window the specified file and line."
+  (interactive)
+  (when gud-last-frame
+    (gud-set-buffer)
+    (gud-display-line (car gud-last-frame) (cdr gud-last-frame))
+    (message (format "Frame: %s" cljdb-frame))
+    (setq gud-last-last-frame gud-last-frame
+	  gud-last-frame nil)))
+
 (defun set-frame ()
   (setq gud-last-frame
 	(cons (match-string 1 gud-marker-acc)
-	      (string-to-number (match-string 2 gud-marker-acc)))))
+	      (string-to-number (match-string 2 gud-marker-acc))))
+  (setq cljdb-frame (match-string 3 gud-marker-acc)))
 
 (defun display-message ()
   (message (match-string 1 gud-marker-acc)))
 
-(setq gbjc 0)
 (defun display-no-source ()
-  (setq gbjc (+ 1 gbjc))
   (message "Source not found"))
 
 (defun filter-input (regex action)
@@ -74,7 +84,6 @@ switch is given, omit all whitespace between it and its value."
 	(funcall action))
     ;; Set the accumulator to the remaining text.
     (setq gud-marker-acc (substring gud-marker-acc (match-end 0)))))
-
 
 (defun gud-jdb-marker-filter (string)
 
@@ -86,10 +95,10 @@ switch is given, omit all whitespace between it and its value."
 
   (let (file-found)
     ;; Process each complete marker in the input.
-    (filter-input "^Source not found$"  'display-no-source)
-    (filter-input "CDT location is \\(.+\\):\\(.+\\):" 'set-frame)
+    (filter-input "\\(Source not found\\)"  'display-no-source)
+    (filter-input "CDT location is \\(.+\\):\\(.+\\):\\(.+\\)" 'set-frame)
     (filter-input "CDT reval returned \\(.+\\)$"  'display-message)
-
+    (filter-input "no breakpoints found at line \\(.+\\)$"  'display-message)
 
 
     (if (string-match comint-prompt-regexp gud-marker-acc)

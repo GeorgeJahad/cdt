@@ -99,7 +99,7 @@
   (try
    (let [line (.lineNumber (.location (.frame (ct) (cf))))]
      (if-let [path (get-source)]
-       (println "CDT location is" (format "%s:%d:" path line))
+       (println "CDT location is" (format "%s:%d:%d" path line (cf)))
        (println "Source not found")))
    (catch Exception _ (println "Source not found")))
   (print-frame))
