@@ -78,6 +78,9 @@ Obeying it means displaying in another window the specified file and line."
 (defun display-no-source ()
   (message "Source not found"))
 
+(defun display-bp-error ()
+  (message (format "no bp found at line %s" (match-string 1 gud-marker-acc))))
+
 (defun filter-input (regex action)
   (while (string-match regex gud-marker-acc)
     (if (match-string 1 gud-marker-acc)
@@ -98,7 +101,7 @@ Obeying it means displaying in another window the specified file and line."
     (filter-input "\\(Source not found\\)"  'display-no-source)
     (filter-input "CDT location is \\(.+\\):\\(.+\\):\\(.+\\)" 'set-frame)
     (filter-input "CDT reval returned \\(.+\\)$"  'display-message)
-    (filter-input "no breakpoints found at line \\(.+\\)$"  'display-message)
+    (filter-input "no breakpoints found at line \\(.+\\)$"  'display-bp-error)
 
 
     (if (string-match comint-prompt-regexp gud-marker-acc)
