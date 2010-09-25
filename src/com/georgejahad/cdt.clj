@@ -286,16 +286,20 @@
   (str2/replace c "/" "."))
 
 (defn get-class [fname]
-  (if (= @source-path "")
+  (when (= @source-path "")
     (throw (IllegalStateException.
-            "source-path must be set before calling line-bp"))
-    (->> (.split @source-path ":")
-         (map #(re-find (re-pattern (str % "/(.*)(.clj|.java)")) fname))
-         (remove nil?)
-         first
-         second
-         fix-class
-         re-pattern)))
+            "source-path must be set before calling line-bp")))
+  (try
+   (->> (.split @source-path ":")
+        (map #(re-find (re-pattern (str % "/(.*)(.clj|.java)")) fname))
+        (remove nil?)
+        first
+        second
+        fix-class
+        re-pattern)
+   (catch Exception e
+     (println fname "not found")
+     (throw (Exception. (str fname " not found"))))))
 
 (defn get-ns []
   (symbol (unmunge (str (get-class (get-source))))))
@@ -571,7 +575,7 @@
   ([form]
      `(reval ~form true))
   ([form locals?]
-     `(safe-reval ~form true)))
+     `(safe-reval '~form true)))
 
 (defn string-nil [x]
   (if (nil? x) "nil" x))
