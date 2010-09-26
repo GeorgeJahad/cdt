@@ -483,9 +483,10 @@
   (let [form (if return-str?
                `(with-out-str (pr (eval '~form)))
                `(eval '~form))]
-    `(try ~form
-          (catch Throwable t#
-            (with-out-str (pr (str "remote exception: " t#)))))))
+    `(binding [*ns* (find-ns '~(get-ns))]
+       (try ~form
+            (catch Throwable t#
+              (with-out-str (pr (str "remote exception: " t#))))))))
 
 (defn gen-remote-form-and-eval [form]
   (-> (remote-create-str form)
@@ -540,21 +541,6 @@
      (doseq [[i f] (indexed (.frames thread))]
        (print-frame i f))))
 
-(defn get-current-ns []
-  (symbol (read-string (str (reval-ret-str '(symbol (str *ns*)) false)))))
-
-(defn set-ns [ns]
-  `(reval-ret-str (list 'in-ns (list 'quote ~ns)) false))
-
-(defmacro with-correct-ns [form]
-  (let [old-ns (gensym)]
-    `(let [~old-ns (get-current-ns)]
-       (try 
-        ~(set-ns '(get-ns))
-        ~form
-        (finally
-         ~(set-ns old-ns))))))
-
 (defmacro with-breakpoints-disabled [form]
   `(try
     (enable-all-breakpoints false)
@@ -563,13 +549,12 @@
      (enable-all-breakpoints true))))
 
 (defn safe-reval [form locals?]
-  (with-correct-ns
-    (with-breakpoints-disabled
-      (try 
-       (read-string (fixup-string-reference-impl
-                     (reval-ret-str form locals?)))
-       (catch Exception e#
-         (println-str (str (reval-ret-str form locals?))))))))
+  (with-breakpoints-disabled
+    (try 
+     (read-string (fixup-string-reference-impl
+                   (reval-ret-str form locals?)))
+     (catch Exception e#
+       (println-str (str (reval-ret-str form locals?)))))))
 
 (defmacro reval
   ([form]
