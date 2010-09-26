@@ -84,19 +84,24 @@ Obeying it means displaying in another window the specified file and line."
 	      (string-to-number (match-string 2 gud-marker-acc))))
   (setq cdt-frame (match-string 3 gud-marker-acc)))
 
-(defun display-message ()
+(defun display-match ()
   (message (match-string 1 gud-marker-acc)))
 
-(defun display-no-source ()
-  (message "Source not found"))
+(defun display-match0 ()
+  (message (match-string 0 gud-marker-acc)))
+
+(defun display-message (arg)
+  (message arg))
 
 (defun display-bp-error ()
   (message (format "no bp found at line %s" (match-string 1 gud-marker-acc))))
 
-(defun filter-input (regex action)
+(defun filter-input (regex action &optional arg)
   (while (string-match regex gud-marker-acc)
     (if (match-string 1 gud-marker-acc)
-	(funcall action))
+	(if arg
+	    (funcall action arg)
+	  (funcall action)))
     ;; Set the accumulator to the remaining text.
     (setq gud-marker-acc (substring gud-marker-acc (match-end 0)))))
 
@@ -110,10 +115,12 @@ Obeying it means displaying in another window the specified file and line."
 
   (let (file-found)
     ;; Process each complete marker in the input.
-    (filter-input "\\(Source not found\\)"  'display-no-source)
+    (filter-input "\\(Source not found\\)"  'display-match)
     (filter-input "CDT location is \\(.+\\):\\(.+\\):\\(.+\\)" 'set-frame)
-    (filter-input "CDT reval returned \\(.+\\)$"  'display-message)
-    (filter-input "no breakpoints found at line \\(.+\\)$"  'display-bp-error)
+    (filter-input "CDT reval returned \\(.+\\)$"  'display-match)
+    (filter-input "no breakpoints found at line \\(.+\\)$"  'display-match0)
+    (filter-input "bp set on \\(.+\\)$"  'display-match0)
+    (filter-input "\\(starting event handler\\)$"  'display-message "CDT ready") 
 
 
     (if (string-match comint-prompt-regexp gud-marker-acc)
