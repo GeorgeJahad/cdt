@@ -9,29 +9,38 @@
 (require 'gud)
 (require 'thingatpt)
 
-(defun cljdb-repl ()
+(defun cdt-repl ()
   (interactive)
   (switch-to-buffer gud-comint-buffer))
 
-(defun cljdb-here ()
+(defun cdt-here ()
   (interactive)
   (gud-call "(print-current-location)"))
 
-(defun cljdb-print ()
+(defun cdt-print ()
   (interactive)
   (gud-call (format "(reval-display '%s)" (thing-at-point 'sexp))))
 
-(defun cdt (command-line)
+(defun strip-trail (path)
+  (if (= (elt path (- (length path) 1)) ?/)
+      (substring path 0 (- (length path) 1))
+    path))
+
+(defun cdt-query-cmdline ()
+  (let ((path (strip-trail cdt-dir)))
+    (format "java -classpath%s/lib/clojure-1.2.0.jar:%s/lib/clojure-contrib-1.2.0.jar:%s/lib/debug-repl-0.3.0-20091229.021828-3.jar:%s/src clojure.main --repl"
+	    path path path path)))
+
+(defun cdt (port)
   "Run cdt with command line COMMAND-LINE in a buffer.
 The buffer is named \"*gud*\" if no initial class is given or
 \"*gud-<initial-class-basename>*\" if there is.  If the \"-classpath\"
 switch is given, omit all whitespace between it and its value."
 
-  (interactive
-   (list (gud-query-cmdline 'cdt)))
+  (interactive "sPort to connect to : ")
 
-  (gud-common-init command-line 'gud-jdb-massage-args
-		   'gud-jdb-marker-filter)
+  (gud-common-init (cdt-query-cmdline) 'gud-jdb-massage-args
+		      'gud-jdb-marker-filter)
   (set (make-local-variable 'gud-minor-mode) 'jdb)
 
   (gud-def gud-break  "(line-bp \"%d%f\" %l)"  "\C-b" "breakpoint on current line")
@@ -44,13 +53,16 @@ switch is given, omit all whitespace between it and its value."
   (gud-def gud-down2  "(down)"          "\C-d" "Down one stack frame.")
   (gud-def gud-this   "(reval-display 'this)"   "\C-t" "print this pointer")
 
-  (global-set-key (vconcat gud-key-prefix "\C-h") 'cljdb-here)
-  (global-set-key (vconcat gud-key-prefix "\C-r") 'cljdb-repl)
-  (global-set-key (vconcat gud-key-prefix "\C-p") 'cljdb-print)
+  (global-set-key (vconcat gud-key-prefix "\C-h") 'cdt-here)
+  (global-set-key (vconcat gud-key-prefix "\C-r") 'cdt-repl)
+  (global-set-key (vconcat gud-key-prefix "\C-p") 'cdt-print)
 
   (setq comint-prompt-regexp "^[^ ]*=>")
 
   (setq paragraph-start comint-prompt-regexp)
+  (gud-call "(use 'com.georgejahad.cdt)")
+  (gud-call (format "(set-source-path \"%s\")" cdt-source-path))
+  (gud-call (format "(cdt-attach %s)" port))
   (run-hooks 'jdb-mode-hook))
 
 (setq cdt-el-version .1)
@@ -62,7 +74,7 @@ Obeying it means displaying in another window the specified file and line."
   (when gud-last-frame
     (gud-set-buffer)
     (gud-display-line (car gud-last-frame) (cdr gud-last-frame))
-    (message (format "Frame: %s" cljdb-frame))
+    (message (format "Frame: %s" cdt-frame))
     (setq gud-last-last-frame gud-last-frame
 	  gud-last-frame nil)))
 
@@ -70,7 +82,7 @@ Obeying it means displaying in another window the specified file and line."
   (setq gud-last-frame
 	(cons (match-string 1 gud-marker-acc)
 	      (string-to-number (match-string 2 gud-marker-acc))))
-  (setq cljdb-frame (match-string 3 gud-marker-acc)))
+  (setq cdt-frame (match-string 3 gud-marker-acc)))
 
 (defun display-message ()
   (message (match-string 1 gud-marker-acc)))
