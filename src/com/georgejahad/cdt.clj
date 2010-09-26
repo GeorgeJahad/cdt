@@ -7,21 +7,19 @@
 ;; You must not remove this notice, or any other, from this software.
 
 (ns com.georgejahad.cdt
-  (:require [clojure.contrib.str-utils2 :as str2])
-  (:use [clojure.contrib.seq-utils :only [indexed]]
-        [clojure.contrib.repl-utils :only
+  (:require [clojure.string :as str])
+  (:use [clojure.contrib.repl-utils :only
          [start-handling-break add-break-thread!]])
   (:import java.util.ArrayList
            clojure.lang.Compiler))
-
-(use 'alex-and-georges.debug-repl)
 
 (declare reval-ret* reval-ret-str reval-ret-obj
          disable-stepping show-data update-step-list print-frame
          unmunge delete-bp-fn)
 
-;; This handles the fact that tools.jar is a global dependency that
-;; can't really be in a repo:
+;; add-classpath is ugly, but handles the fact that tools.jar and
+;; sa-jdi.jar are platform dependencies that I can't easily put in a
+;; repo:
 (with-out-str (add-classpath (format "file://%s/../lib/tools.jar"
                                      (System/getProperty "java.home"))))
 (with-out-str (add-classpath (format "file://%s/../lib/sa-jdi.jar"
@@ -161,19 +159,23 @@
     (disable-stepping)
     (print-current-location)))
 
+(defmacro handle-event-exceptions [& body]
+  `(try
+    ~@body
+    (catch Exception e#
+      (do
+        (println "exception in event handler" e#)
+        (Thread/sleep 500)))))
+
 (defn handle-events []
   (println "starting event handler")
   (let [q (.eventQueue (vm))]
     (while true
-           (try
+           (handle-event-exceptions
             (let [s (.remove q)]
               (doseq [i (iterator-seq (.eventIterator s))]
                 (handle-event i))
-              (finish-set s))
-            (catch Exception e
-              (do
-                (println "exception in event handler" e)
-                (Thread/sleep 500)))))))
+              (finish-set s))))))
 
 (defonce event-handler (atom nil))
 
@@ -221,7 +223,7 @@
 (def sroot (memoize #(first (find-methods (va) #"swapRoot"))))
 
 (defn print-threads []
-  (doseq [[n t] (indexed (seq (list-threads)))]
+  (doseq [[n t] (keep-indexed vector (seq (list-threads)))]
     (println n (.name t))))
 
 (defrecord BpSpec [methods bps])
@@ -285,6 +287,9 @@
   (for [c (find-classes (gen-class-pattern sym))
         m (regex-filter #"(invoke|doInvoke)" (.methods c))] m))
 
+(defn print-bps []
+  (doseq [[n k] (keep-indexed vector (keys @bp-list))]
+    (println n k)))
 
 (defn set-bp-locations [sym locations]
   (let [bps (doall (map create-bp locations))]
@@ -305,20 +310,23 @@
   `(set-bp-sym '~sym))
 
 (defn fix-class [c]
-  (str2/replace c "/" "."))
+  (str/replace c "/" "."))
+
+(defn get-class* [fname]
+  (->> (.split @source-path ":")
+       (map #(re-find (re-pattern (str % "/(.*)(.clj|.java)")) fname))
+       (remove nil?)
+       first
+       second
+       fix-class
+       re-pattern))
 
 (defn get-class [fname]
   (when (= @source-path "")
     (throw (IllegalStateException.
             "source-path must be set before calling line-bp")))
   (try
-   (->> (.split @source-path ":")
-        (map #(re-find (re-pattern (str % "/(.*)(.clj|.java)")) fname))
-        (remove nil?)
-        first
-        second
-        fix-class
-        re-pattern)
+   (get-class* fname)
    (catch Exception e
      (println fname "not found")
      (throw (Exception. (str fname " not found"))))))
@@ -427,7 +435,7 @@
      (reverse (sort-by second compare clojure.lang.Compiler/CHAR_MAP)))
 
 (defn unmunge [n]
-  (reduce (fn[n [k v]] (str2/replace n v (str k))) n unmunge-seq))
+  (reduce (fn[n [k v]] (str/replace n v (str k))) n unmunge-seq))
 
 (defn fix-values [values]
   (into {} (for [[k v] values] [(unmunge (.name k)) v])))
@@ -566,13 +574,13 @@
 (defn print-frames
   ([] (print-frames (ct)))
   ([thread]
-     (doseq [[i f] (indexed (.frames thread))]
+     (doseq [[i f] (keep-indexed vector (.frames thread))]
        (print-frame i f))))
 
-(defmacro with-breakpoints-disabled [form]
+(defmacro with-breakpoints-disabled [& body]
   `(try
     (enable-all-breakpoints false)
-    ~form
+    ~@body
     (finally
      (enable-all-breakpoints true))))
 
