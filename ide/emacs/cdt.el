@@ -51,6 +51,7 @@ switch is given, omit all whitespace between it and its value."
   (gud-def gud-finish "(finish)"        "\C-f" "Go until current method returns.")
   (gud-def gud-up2    "(up)"            "\C-u" "Up one stack frame.")
   (gud-def gud-down2  "(down)"          "\C-d" "Down one stack frame.")
+  (gud-def gud-status  "(status-report)"  "s" "Status report")
   (gud-def gud-this   "(reval-display 'this)"   "\C-t" "print this pointer")
 
   (global-set-key (vconcat gud-key-prefix "\C-h") 'cdt-here)
@@ -74,7 +75,7 @@ Obeying it means displaying in another window the specified file and line."
   (when gud-last-frame
     (gud-set-buffer)
     (gud-display-line (car gud-last-frame) (cdr gud-last-frame))
-    (message (format "Frame: %s" cdt-frame))
+    (message (format "Frame: %s %s %s" cdt-frame (car gud-last-frame) (cdr gud-last-frame)))
     (setq gud-last-last-frame gud-last-frame
 	  gud-last-frame nil)))
 
@@ -116,11 +117,16 @@ Obeying it means displaying in another window the specified file and line."
   (let (file-found)
     ;; Process each complete marker in the input.
     (filter-input "\\(Source not found\\)"  'display-match)
+    (filter-input "\\(command can only be run after stopping at an breakpoint or exception\\)"  'display-match0)
     (filter-input "CDT location is \\(.+\\):\\(.+\\):\\(.+\\)" 'set-frame)
     (filter-input "CDT reval returned \\(.+\\)$"  'display-match)
     (filter-input "no breakpoints found at line \\(.+\\)$"  'display-match0)
     (filter-input "bp set on \\(.+\\)$"  'display-match0)
+    (filter-input "Status of current thread is \\(.+\\)$" 'display-match0)
     (filter-input "\\(starting event handler\\)$"  'display-message "CDT ready") 
+    (filter-input "exception in event handler \\(.+\\)$" 'display-match0) 
+    (filter-input "Unexpected exception generated: \\(.+\\)$" 'display-match0) 
+    (filter-input "already at \\(.+\\) of stack $" 'display-match0) 
 
 
     (if (string-match comint-prompt-regexp gud-marker-acc)

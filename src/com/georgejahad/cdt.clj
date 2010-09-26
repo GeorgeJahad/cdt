@@ -82,6 +82,12 @@
 
 (defn cf [] @current-frame)
 
+(defn status-report []
+  (let [s (if (and (ct) (.isSuspended (ct)))
+            " "
+            " not ")]
+    (println (str "Status of current thread is" s "suspended."))))
+
 (defonce source-path (atom ""))
 
 (defn set-source-path [path]
@@ -95,14 +101,29 @@
       (first (filter #(.exists (java.io.File. %))
                      (for [p paths] (str p "/" file)))))))
 
+(defmacro check-unexpected-exception [& body]
+  `(try
+   ~@body
+   (catch Exception e#
+     (println "Unexpected exception generated: " e#)
+     (throw e#))))
+
+(defmacro check-incompatible-state [& body]
+  `(try
+   ~@body
+   (catch IncompatibleThreadStateException e#
+     (println "command can only be run after stopping at an breakpoint or exception"))))
+
 (defn print-current-location []
   (try
-   (let [line (.lineNumber (.location (.frame (ct) (cf))))]
-     (if-let [path (get-source)]
-       (println "CDT location is" (format "%s:%d:%d" path line (cf)))
-       (println "Source not found")))
-   (catch Exception _ (println "Source not found")))
-  (print-frame))
+   (check-incompatible-state
+    (let [line (.lineNumber (.location (.frame (ct) (cf))))]
+      (if-let [path (get-source)]
+        (do
+          (println "CDT location is" (format "%s:%d:%d" path line (cf)))
+          (print-frame))
+        (println "Source not found"))))
+   (catch Exception _ (println "Source not found"))))
 
 (defn up []
   (let [max (dec (count (.frames (ct))))]
@@ -310,12 +331,13 @@
    (catch com.sun.jdi.AbsentInformationException _ [])))
 
 (defn line-bp [fname line]
-  (let [c (get-class fname)
-        sym (symbol (str c ":" line))
-        classes (filter #(re-find c (.name %)) (.allClasses (vm)))
-        locations (mapcat (partial get-locations line) classes)]
-    (when-not (set-bp-locations sym locations)
-      (println "no breakpoints found at line" line))))
+  (check-unexpected-exception
+   (let [c (get-class fname)
+         sym (symbol (str c ":" line))
+         classes (filter #(re-find c (.name %)) (.allClasses (vm)))
+         locations (mapcat (partial get-locations line) classes)]
+     (when-not (set-bp-locations sym locations)
+       (println "no breakpoints found at line" line)))))
 
 (defn delete-bp-fn [sym]
   (doseq [bp (:bps (@bp-list sym))]
@@ -497,13 +519,9 @@
 
 (defn reval-ret*
   [return-str? form locals?]
-  (try
+  (check-incompatible-state
    (let [form (if-not locals? form (gen-form-with-locals form))]
-     (gen-remote-form-and-eval (gen-form form return-str?)))
-   (catch IncompatibleThreadStateException e
-     (throw
-      (IncompatibleThreadStateException.
-       "reval can only be run after stopping at an breakpoint or exception")))))
+     (gen-remote-form-and-eval (gen-form form return-str?)))))
 
 (def reval-ret-str (partial reval-ret* true))
 (def reval-ret-obj (partial reval-ret* false))
@@ -549,12 +567,13 @@
      (enable-all-breakpoints true))))
 
 (defn safe-reval [form locals?]
-  (with-breakpoints-disabled
-    (try 
-     (read-string (fixup-string-reference-impl
-                   (reval-ret-str form locals?)))
-     (catch Exception e#
-       (println-str (str (reval-ret-str form locals?)))))))
+  (check-unexpected-exception
+   (with-breakpoints-disabled
+     (try 
+      (read-string (fixup-string-reference-impl
+                    (reval-ret-str form locals?)))
+      (catch Exception e#
+        (println-str (str (reval-ret-str form locals?))))))))
 
 (defmacro reval
   ([form]
