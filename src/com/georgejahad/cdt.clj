@@ -18,7 +18,7 @@
 
 (declare reval-ret* reval-ret-str reval-ret-obj
          disable-stepping show-data update-step-list print-frame
-         unmunge)
+         unmunge delete-bp-fn)
 
 ;; This handles the fact that tools.jar is a global dependency that
 ;; can't really be in a repo:
@@ -103,16 +103,16 @@
 
 (defmacro check-unexpected-exception [& body]
   `(try
-   ~@body
-   (catch Exception e#
-     (println "Unexpected exception generated: " e#)
-     (throw e#))))
+    ~@body
+    (catch Exception e#
+      (println "Unexpected exception generated: " e#)
+      (throw e#))))
 
 (defmacro check-incompatible-state [& body]
   `(try
-   ~@body
-   (catch IncompatibleThreadStateException e#
-     (println "command can only be run after stopping at an breakpoint or exception"))))
+    ~@body
+    (catch IncompatibleThreadStateException e#
+      (println "command can only be run after stopping at an breakpoint or exception"))))
 
 (defn print-current-location []
   (try
@@ -261,10 +261,11 @@
 
 (defonce bp-list (atom {}))
 
-(defn merge-with-exception [short-name]
-  (partial merge-with
-           #(throw (IllegalArgumentException.
-                    (str "bp-list already contains a " short-name)))))
+(defn merge-with-exception [sym]
+  (fn [m1 m2]
+    (merge-with
+     (fn [a b] (delete-bp-fn sym) b)
+     m1 m2)))
 
 (defn create-bp [l]
   (doto (.createBreakpointRequest
@@ -501,14 +502,23 @@
   (let [locals (add-locals-to-map)]
     `(let ~(gen-local-bindings (get-cdt-sym) locals) ~form)))
 
+(defn is-java? [fname]
+  (.endsWith fname ".java"))
+
+(defn setup-namespace [form]
+  (if (is-java? (get-source))
+    form
+    `(binding [*ns* (find-ns '~(get-ns))]
+       ~form)))
+
 (defn gen-form [form return-str?]
   (let [form (if return-str?
                `(with-out-str (pr (eval '~form)))
                `(eval '~form))]
-    `(binding [*ns* (find-ns '~(get-ns))]
-       (try ~form
-            (catch Throwable t#
-              (with-out-str (pr (str "remote exception: " t#))))))))
+    (setup-namespace 
+     `(try ~form
+           (catch Throwable t#
+             (with-out-str (pr (str "remote exception: " t#))))))))
 
 (defn gen-remote-form-and-eval [form]
   (-> (remote-create-str form)
