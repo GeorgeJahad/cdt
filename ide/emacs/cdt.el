@@ -9,6 +9,9 @@
 (require 'gud)
 (require 'thingatpt)
 
+(defvar cdt-dir "")
+(defvar cdt-source-path "")
+
 (defun cdt-repl ()
   (interactive)
   (switch-to-buffer gud-comint-buffer))
@@ -32,12 +35,7 @@
 	    path path path path)))
 
 (defun cdt (port)
-  "Run cdt with command line COMMAND-LINE in a buffer.
-The buffer is named \"*gud*\" if no initial class is given or
-\"*gud-<initial-class-basename>*\" if there is.  If the \"-classpath\"
-switch is given, omit all whitespace between it and its value."
-
-  (interactive "sPort to connect to : ")
+  (interactive "sPort number to connect to : ")
 
   (gud-common-init (cdt-query-cmdline) 'gud-jdb-massage-args
 		      'gud-jdb-marker-filter)
@@ -116,11 +114,11 @@ Obeying it means displaying in another window the specified file and line."
 
   (let (file-found)
     ;; Process each complete marker in the input.
-    (filter-input "\\(Source not found\\)"  'display-match)
+    (filter-input "Source not found\\(.+\\)"  'display-match0)
     (filter-input "\\(command can only be run after stopping at an breakpoint or exception\\)"  'display-match0)
     (filter-input "CDT location is \\(.+\\):\\(.+\\):\\(.+\\)" 'set-frame)
     (filter-input "CDT reval returned \\(.+\\)$"  'display-match)
-    (filter-input "no breakpoints found at line \\(.+\\)$"  'display-match0)
+    (filter-input "No breakpoints found at line: \\(.+\\)$"  'display-match0)
     (filter-input "bp set on \\(.+\\)$"  'display-match0)
     (filter-input "Status of current thread is \\(.+\\)$" 'display-match0)
     (filter-input "\\(starting event handler\\)$"  'display-message "CDT ready") 

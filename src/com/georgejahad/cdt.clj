@@ -88,8 +88,11 @@
 
 (defonce source-path (atom ""))
 
+(defn remove-trailing-slashes [s]
+  (str/replace s "/:" ":"))
+
 (defn set-source-path [path]
-  (reset! source-path path))
+  (reset! source-path (remove-trailing-slashes path)))
 
 (defn get-source []
   (let [file (.sourcePath (.location (.frame (ct) (cf))))
@@ -112,6 +115,8 @@
     (catch IncompatibleThreadStateException e#
       (println "command can only be run after stopping at an breakpoint or exception"))))
 
+(def source-not-found "Source not found; check @source-path")
+
 (defn print-current-location []
   (try
    (check-incompatible-state
@@ -120,8 +125,8 @@
         (do
           (println "CDT location is" (format "%s:%d:%d" path line (cf)))
           (print-frame))
-        (println "Source not found"))))
-   (catch Exception _ (println "Source not found"))))
+        (println source-not-found))))
+   (catch Exception _ (println source-not-found))))
 
 (defn up []
   (let [max (dec (count (.frames (ct))))]
@@ -164,7 +169,7 @@
     ~@body
     (catch Exception e#
       (do
-        (println "exception in event handler" e#)
+        (println "exception in event handler" e# "You may need to restart CDT")
         (Thread/sleep 500)))))
 
 (defn handle-events []
@@ -328,8 +333,8 @@
   (try
    (get-class* fname)
    (catch Exception e
-     (println fname "not found")
-     (throw (Exception. (str fname " not found"))))))
+     (println fname source-not-found)
+     (throw (Exception. (str fname " " source-not-found))))))
 
 (defn get-ns []
   (symbol (unmunge (str (get-class (get-source))))))
@@ -346,7 +351,7 @@
          classes (filter #(re-find c (.name %)) (.allClasses (vm)))
          locations (mapcat (partial get-locations line) classes)]
      (when-not (set-bp-locations sym locations)
-       (println "no breakpoints found at line" line)))))
+       (println "No breakpoints found at line:" line)))))
 
 (defn delete-bp-fn [sym]
   (doseq [bp (:bps (@bp-list sym))]
