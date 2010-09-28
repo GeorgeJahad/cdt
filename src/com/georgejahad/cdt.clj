@@ -9,7 +9,8 @@
 (ns com.georgejahad.cdt
   (:require [clojure.string :as str])
   (:use [clojure.contrib.repl-utils :only
-         [start-handling-break add-break-thread!]])
+         [start-handling-break add-break-thread!]]
+        [alex-and-georges.debug-repl])
   (:import java.util.ArrayList
            clojure.lang.Compiler))
 
@@ -314,6 +315,11 @@
   [sym]
   `(set-bp-sym '~sym))
 
+(defn append-dollar [s]
+  (if (is-java? (get-source))
+    s
+    (re-pattern (str s "\\$"))))
+
 (defn fix-class [c]
   (str/replace c "/" "."))
 
@@ -348,7 +354,7 @@
   (check-unexpected-exception
    (let [c (get-class fname)
          sym (symbol (str c ":" line))
-         classes (filter #(re-find c (.name %)) (.allClasses (vm)))
+         classes (filter #(re-find (append-dollar c) (.name %)) (.allClasses (vm)))
          locations (mapcat (partial get-locations line) classes)]
      (when-not (set-bp-locations sym locations)
        (println "No breakpoints found at line:" line)))))

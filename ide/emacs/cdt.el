@@ -84,13 +84,13 @@ Obeying it means displaying in another window the specified file and line."
   (setq cdt-frame (match-string 3 gud-marker-acc)))
 
 (defun display-match ()
-  (message (match-string 1 gud-marker-acc)))
+  (message "%s" (match-string 1 gud-marker-acc)))
 
 (defun display-match0 ()
-  (message (match-string 0 gud-marker-acc)))
+  (message "%s"  (match-string 0 gud-marker-acc)))
 
 (defun display-message (arg)
-  (message arg))
+  (message "%s" arg))
 
 (defun display-bp-error ()
   (message (format "no bp found at line %s" (match-string 1 gud-marker-acc))))
