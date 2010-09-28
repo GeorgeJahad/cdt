@@ -354,7 +354,8 @@
   (check-unexpected-exception
    (let [c (get-class fname)
          sym (symbol (str c ":" line))
-         classes (filter #(re-find (append-dollar c) (.name %)) (.allClasses (vm)))
+         classes (filter #(re-find (append-dollar c) (.name %))
+                         (.allClasses (vm)))
          locations (mapcat (partial get-locations line) classes)]
      (when-not (set-bp-locations sym locations)
        (println "No breakpoints found at line:" line)))))
@@ -534,7 +535,7 @@
   (let [form (if return-str?
                `(with-out-str (pr (eval '~form)))
                `(eval '~form))]
-    (setup-namespace 
+    (setup-namespace
      `(try ~form
            (catch Throwable t#
              (with-out-str (pr (str "remote exception: " t#))))))))
@@ -598,7 +599,7 @@
 (defn safe-reval [form locals?]
   (check-unexpected-exception
    (with-breakpoints-disabled
-     (try 
+     (try
       (read-string (fixup-string-reference-impl
                     (reval-ret-str form locals?)))
       (catch Exception e#
@@ -618,50 +619,3 @@
 
 (start-handling-break)
 (add-break-thread!)
-
-(comment
-  (defn class-test [string data]
-    (= (str (class data)) (str "class sun.jvm.hotspot.jdi." string)))
-
-  (def field? (partial class-test "FieldImpl"))
-  (def array-ref? (partial class-test "ArrayReferenceImpl"))
-  (def string-ref? (partial class-test "StringReferenceImpl"))
-
-  (defn seqable [data]
-    (try
-     (.allFields (.referenceType data))
-     (catch Exception _ false)))
-
-
-  #_(use 'alex-and-georges.debug-repl)
-  (import sun.jvm.hotspot.jdi.FieldImpl)
-
-  (defn handle-field [prev [depth limit data]]
-    (show-data  (.getValue prev data) [(inc depth) limit (.getValue prev data)]))
-
-  (def gbug (atom nil))
-  (defn show-data [prev [depth limit data]]
-    #_  (println data)
-    (when @gbug
-      #_    (debug-repl))
-    (cond
-     (> depth limit)
-     (do
-       (println "depth " depth "reached")
-       [depth limit data])
-     (field? data)
-     (do
-       #_      (println "field found ")
-       (handle-field prev [depth limit data]))
-     (array-ref? data)
-     (map #(show-data data [(inc depth) limit %])
-          (.getValues data))
-     (string-ref? data)
-     [depth limit data]
-     :else
-     (if-let [fields (seqable data)]
-       (map #(show-data data [(inc depth) limit %])
-            fields)
-       [depth limit data])))
-
-  )
