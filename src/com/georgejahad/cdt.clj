@@ -315,6 +315,10 @@
   [sym]
   `(set-bp-sym '~sym))
 
+
+(defn is-java? [fname]
+  (.endsWith fname ".java"))
+
 (defn append-dollar [s]
   (if (is-java? (get-source))
     s
@@ -521,9 +525,6 @@
 (defn gen-form-with-locals [form]
   (let [locals (add-locals-to-map)]
     `(let ~(gen-local-bindings (get-cdt-sym) locals) ~form)))
-
-(defn is-java? [fname]
-  (.endsWith fname ".java"))
 
 (defn setup-namespace [form]
   (if (is-java? (get-source))
