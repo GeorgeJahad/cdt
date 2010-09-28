@@ -319,8 +319,8 @@
 (defn is-java? [fname]
   (.endsWith fname ".java"))
 
-(defn append-dollar [s]
-  (if (is-java? (get-source))
+(defn append-dollar [fname s]
+  (if (is-java? fname)
     s
     (re-pattern (str s "\\$"))))
 
@@ -358,7 +358,7 @@
   (check-unexpected-exception
    (let [c (get-class fname)
          sym (symbol (str c ":" line))
-         classes (filter #(re-find (append-dollar c) (.name %))
+         classes (filter #(re-find (append-dollar fname c) (.name %))
                          (.allClasses (vm)))
          locations (mapcat (partial get-locations line) classes)]
      (when-not (set-bp-locations sym locations)
