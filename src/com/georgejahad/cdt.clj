@@ -34,6 +34,13 @@
         com.sun.jdi.event.LocatableEvent
         com.sun.jdi.IncompatibleThreadStateException)
 
+(def CDT-DISPLAY-MSG (atom false))
+
+(defn cdt-display-msg [s]
+  (if @CDT-DISPLAY-MSG
+    (str "CDT Display Message: " s)
+    s))
+
 (defn regex-filter [regex seq]
   (filter #(re-find regex (.name %)) seq))
 
@@ -85,7 +92,7 @@
   (let [s (if (and (ct) (.isSuspended (ct)))
             " "
             " not ")]
-    (println (str "Status of current thread is" s "suspended."))))
+    (println (str (cdt-display-msg "Status of current thread is") s "suspended."))))
 
 (defonce source-path (atom ""))
 
@@ -107,16 +114,16 @@
   `(try
     ~@body
     (catch Exception e#
-      (println "Unexpected exception generated: " e#)
+      (println (cdt-display-msg "Unexpected exception generated: ") e#)
       (throw e#))))
 
 (defmacro check-incompatible-state [& body]
   `(try
     ~@body
     (catch IncompatibleThreadStateException e#
-      (println "command can only be run after stopping at an breakpoint or exception"))))
+      (println (cdt-display-msg "command can only be run after stopping at an breakpoint or exception")))))
 
-(def source-not-found "Source not found; check @source-path")
+(defn source-not-found [] (cdt-display-msg "Source not found; check @source-path"))
 
 (defn print-current-location []
   (try
@@ -126,21 +133,23 @@
         (do
           (println "CDT location is" (format "%s:%d:%d" path line (cf)))
           (print-frame))
-        (println source-not-found))))
-   (catch Exception _ (println source-not-found))))
+        (println (source-not-found)))))
+   (catch Exception _ (println (source-not-found)))))
 
 (defn up []
   (let [max (dec (count (.frames (ct))))]
     (if (< (cf) max)
-      (scf (inc (cf)))
-      (println "already at top of stack")))
-  (print-current-location))
+      (do
+        (scf (inc (cf)))
+        (print-current-location))
+      (println (cdt-display-msg "already at top of stack")))))
 
 (defn down []
   (if (> (cf) 0)
-    (scf (dec (cf)))
-    (println "already at bottom of stack"))
-  (print-current-location))
+    (do
+      (scf (dec (cf)))
+      (print-current-location))
+    (println (cdt-display-msg "already at bottom of stack"))))
 
 (defn handle-exception [e]
   (println "\n\nException" e
@@ -170,11 +179,12 @@
     ~@body
     (catch Exception e#
       (do
-        (println "exception in event handler" e# "You may need to restart CDT")
+        (println (cdt-display-msg "exception in event handler")
+                 e# "You may need to restart CDT")
         (Thread/sleep 500)))))
 
 (defn handle-events []
-  (println "starting event handler")
+  (println (cdt-display-msg "CDT ready"))
   (let [q (.eventQueue (vm))]
     (while true
            (handle-event-exceptions
@@ -301,7 +311,7 @@
   (let [bps (doall (map create-bp locations))]
     (if (seq bps)
       (do
-        (println "bp set on" locations)
+        (println (cdt-display-msg "bp set on") locations)
         (swap! bp-list
                (merge-with-exception sym) {sym (BpSpec. locations bps)}))
       false)))
@@ -343,8 +353,8 @@
   (try
    (get-class* fname)
    (catch Exception e
-     (println fname source-not-found)
-     (throw (Exception. (str fname " " source-not-found))))))
+     (println fname (source-not-found))
+     (throw (Exception. (str fname " " (source-not-found)))))))
 
 (defn get-ns []
   (symbol (unmunge (str (get-class (get-source))))))
@@ -362,7 +372,7 @@
                          (.allClasses (vm)))
          locations (mapcat (partial get-locations line) classes)]
      (when-not (set-bp-locations sym locations)
-       (println "No breakpoints found at line:" line)))))
+       (println (cdt-display-msg "No breakpoints found at line:") line)))))
 
 (defn delete-bp-fn [sym]
   (doseq [bp (:bps (@bp-list sym))]
@@ -616,7 +626,7 @@
   (if (nil? x) "nil" x))
 
 (defn reval-display [form]
-  (println (str "CDT reval returned " (string-nil (safe-reval form true)))))
+  (println (cdt-display-msg (string-nil (safe-reval form true)))))
 
 (start-handling-break)
 (add-break-thread!)
