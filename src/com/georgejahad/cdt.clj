@@ -178,10 +178,9 @@
   `(try
     ~@body
     (catch Exception e#
-      (do
-        (println (cdt-display-msg "exception in event handler")
-                 e# "You may need to restart CDT")
-        (Thread/sleep 500)))))
+      (println (cdt-display-msg "exception in event handler")
+               e# "You may need to restart CDT")
+      (Thread/sleep 500))))
 
 (defn handle-events []
   (println (cdt-display-msg "CDT ready"))
@@ -231,6 +230,8 @@
 (def rstring (memoize #(first (find-methods (rt) #"readString"))))
 
 (def as (memoize #(first (find-methods (rt) #"assoc"))))
+
+(def cj (memoize #(first (find-methods (rt) #"conj"))))
 
 (def ev (memoize #(first (find-methods (co) #"eval"))))
 
@@ -433,6 +434,8 @@
 (defn remote-swap-root [v arg-list]
   (remote-invoke (constantly v) sroot arg-list (ct) (cf)))
 
+(def remote-conj (partial remote-invoke rt cj))
+
 (defn get-file-name [frame]
   (let [sp (try (.sourcePath (.location frame))
                 (catch Exception e "source not found"))]
@@ -610,11 +613,10 @@
 (defn safe-reval [form locals?]
   (check-unexpected-exception
    (with-breakpoints-disabled
-     (try
-      (read-string (fixup-string-reference-impl
-                    (reval-ret-str form locals?)))
-      (catch Exception e#
-        (println-str (str (reval-ret-str form locals?))))))))
+     (let [s (reval-ret-str form locals?)]
+       (try
+         (read-string (fixup-string-reference-impl s))
+         (catch Exception e (println-str (str s))))))))
 
 (defmacro reval
   ([form]
@@ -627,6 +629,37 @@
 
 (defn reval-display [form]
   (println (cdt-display-msg (string-nil (safe-reval form true)))))
+
+(defn gen-class-regex [c]
+  (re-pattern (str (.getName c) "$")))
+
+(defn add-obj-to-vec [v obj]
+  (remote-conj
+   (make-arg-list v obj) (ct) (cf)))
+
+(defn get-instances [classes]
+  (let [regexes (map gen-class-regex classes)]
+    (mapcat #(.instances % 0) (mapcat find-classes regexes))))
+
+(defn create-var-from-objs [ns sym coll-form add-fn objs]
+  (let [v (reval-ret-obj `(intern '~ns '~sym ~coll-form) false)
+        new-vec (reduce add-fn (remote-get v) objs)]
+    (remote-swap-root v (make-arg-list new-vec))))
+
+(defn create-instance-seq [ns sym & classes]
+  (let [instances (get-instances classes)]
+    (create-var-from-objs ns sym '[] add-obj-to-vec instances)))
+
+(defn is-head [s ls]
+  )
+
+(defn get-heads [s]
+  (remove nil? (map is-head s)))
+
+(defn create-head-seq [ns sym]
+  (let [s (get-instances [clojure.lang.LazySeq])
+        h (get-heads s)]
+    (create-var-from-objs ns sym '[] add-obj-to-vec h)))
 
 (start-handling-break)
 (add-break-thread!)
