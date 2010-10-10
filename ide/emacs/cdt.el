@@ -25,13 +25,13 @@
   (gud-call (format "(reval-display '%s)" (thing-at-point 'sexp))))
 
 (defun strip-trail (path)
-  (if (= (elt path (- (length path) 1)) ?/)
+  (if (= (elt path (- (length path) 1)) ?\\)
       (substring path 0 (- (length path) 1))
     path))
 
 (defun cdt-query-cmdline ()
   (let ((path (strip-trail cdt-dir)))
-    (format "java -classpath%s/lib/clojure-1.2.0.jar:%s/lib/clojure-contrib-1.2.0.jar:%s/lib/debug-repl-0.3.0-20091229.021828-3.jar:%s/src clojure.main --repl"
+    (format "java -classpath%s\\lib\\clojure-1.2.0.jar;%s\\lib\\clojure-contrib-1.2.0.jar;%s\\lib\\debug-repl-0.3.0-20091229.021828-3.jar;%s\\src clojure.main --repl"
 	    path path path path)))
 
 (defun cdt (port)

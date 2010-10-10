@@ -90,18 +90,18 @@
 (defonce source-path (atom ""))
 
 (defn remove-trailing-slashes [s]
-  (str/replace s "/:" ":"))
+  (str/replace s "\\;" ";"))
 
 (defn set-source-path [path]
   (reset! source-path (remove-trailing-slashes path)))
 
 (defn get-source []
   (let [file (.sourcePath (.location (.frame (ct) (cf))))
-        paths (.split @source-path ":")]
-    (if (= (first file) \/)
+        paths (.split @source-path ";")]
+    (if (= (first file) \\)
       file
       (first (filter #(.exists (java.io.File. %))
-                     (for [p paths] (str p "/" file)))))))
+                     (for [p paths] (str p "\\" file)))))))
 
 (defmacro check-unexpected-exception [& body]
   `(try
@@ -328,8 +328,8 @@
   (str/replace c "/" "."))
 
 (defn get-class* [fname]
-  (->> (.split @source-path ":")
-       (map #(re-find (re-pattern (str % "/(.*)(.clj|.java)")) fname))
+  (->> (.split @source-path ";")
+       (map #(re-find (re-pattern (str % "\\(.*)(.clj|.java)")) fname))
        (remove nil?)
        first
        second
@@ -426,7 +426,7 @@
 (defn get-file-name [frame]
   (let [sp (try (.sourcePath (.location frame))
                 (catch Exception e "source not found"))]
-    (last  (.split sp "/"))))
+    (last  (.split sp "\\"))))
 
 (defn clojure-frame? [frame fields]
   (let [names (map #(.name %) fields)]
