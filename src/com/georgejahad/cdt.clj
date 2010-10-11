@@ -112,29 +112,29 @@
 
 (defmacro check-unexpected-exception [& body]
   `(try
-    ~@body
-    (catch Exception e#
-      (println (cdt-display-msg "Unexpected exception generated: ") e#)
-      (throw e#))))
+     ~@body
+     (catch Exception e#
+       (println (cdt-display-msg "Unexpected exception generated: ") e#)
+       (throw e#))))
 
 (defmacro check-incompatible-state [& body]
   `(try
-    ~@body
-    (catch IncompatibleThreadStateException e#
-      (println (cdt-display-msg "command can only be run after stopping at an breakpoint or exception")))))
+     ~@body
+     (catch IncompatibleThreadStateException e#
+       (println (cdt-display-msg "command can only be run after stopping at an breakpoint or exception")))))
 
 (defn source-not-found [] (cdt-display-msg "Source not found; check @source-path"))
 
 (defn print-current-location []
   (try
-   (check-incompatible-state
-    (let [line (.lineNumber (.location (.frame (ct) (cf))))]
-      (if-let [path (get-source)]
-        (do
-          (println "CDT location is" (format "%s:%d:%d" path line (cf)))
-          (print-frame))
-        (println (source-not-found)))))
-   (catch Exception _ (println (source-not-found)))))
+    (check-incompatible-state
+     (let [line (.lineNumber (.location (.frame (ct) (cf))))]
+       (if-let [path (get-source)]
+         (do
+           (println "CDT location is" (format "%s:%d:%d" path line (cf)))
+           (print-frame))
+         (println (source-not-found)))))
+    (catch Exception _ (println (source-not-found)))))
 
 (defn up []
   (let [max (dec (count (.frames (ct))))]
@@ -176,21 +176,21 @@
 
 (defmacro handle-event-exceptions [& body]
   `(try
-    ~@body
-    (catch Exception e#
-      (println (cdt-display-msg "exception in event handler")
-               e# "You may need to restart CDT")
-      (Thread/sleep 500))))
+     ~@body
+     (catch Exception e#
+       (println (cdt-display-msg "exception in event handler")
+                e# "You may need to restart CDT")
+       (Thread/sleep 500))))
 
 (defn handle-events []
   (println (cdt-display-msg "CDT ready"))
   (let [q (.eventQueue (vm))]
     (while true
-           (handle-event-exceptions
-            (let [s (.remove q)]
-              (doseq [i (iterator-seq (.eventIterator s))]
-                (handle-event i))
-              (finish-set s))))))
+      (handle-event-exceptions
+       (let [s (.remove q)]
+         (doseq [i (iterator-seq (.eventIterator s))]
+           (handle-event i))
+         (finish-set s))))))
 
 (defonce event-handler (atom nil))
 
@@ -352,18 +352,18 @@
     (throw (IllegalStateException.
             "source-path must be set before calling line-bp")))
   (try
-   (get-class* fname)
-   (catch Exception e
-     (println fname (source-not-found))
-     (throw (Exception. (str fname " " (source-not-found)))))))
+    (get-class* fname)
+    (catch Exception e
+      (println fname (source-not-found))
+      (throw (Exception. (str fname " " (source-not-found)))))))
 
 (defn get-ns []
   (symbol (unmunge (str (get-class (get-source))))))
 
 (defn get-locations [line class]
   (try
-   (.locationsOfLine class line)
-   (catch com.sun.jdi.AbsentInformationException _ [])))
+    (.locationsOfLine class line)
+    (catch com.sun.jdi.AbsentInformationException _ [])))
 
 (defn line-bp [fname line]
   (check-unexpected-exception
@@ -605,10 +605,10 @@
 
 (defmacro with-breakpoints-disabled [& body]
   `(try
-    (enable-all-breakpoints false)
-    ~@body
-    (finally
-     (enable-all-breakpoints true))))
+     (enable-all-breakpoints false)
+     ~@body
+     (finally
+      (enable-all-breakpoints true))))
 
 (defn safe-reval [form locals?]
   (check-unexpected-exception
@@ -644,17 +644,24 @@
 (defn create-var-from-objs [ns sym coll-form add-fn objs]
   (let [v (reval-ret-obj `(intern '~ns '~sym ~coll-form) false)
         new-vec (reduce add-fn (remote-get v) objs)]
-    (remote-swap-root v (make-arg-list new-vec))))
+    (remote-swap-root v (make-arg-list new-vec))
+    v))
 
 (defn create-instance-seq [ns sym & classes]
   (let [instances (get-instances classes)]
     (create-var-from-objs ns sym '[] add-obj-to-vec instances)))
 
+(defn is-contained? [ls container]
+  #_(if (= (type container) clojure.lang.LazySeq)
+      (let [val ])))
+
 (defn is-head [s ls]
-  )
+  (if (some (partial is-contained? ls) s)
+    nil
+    ls))
 
 (defn get-heads [s]
-  (remove nil? (map is-head s)))
+  (remove nil? (map (partial is-head s) s)))
 
 (defn create-head-seq [ns sym]
   (let [s (get-instances [clojure.lang.LazySeq])
