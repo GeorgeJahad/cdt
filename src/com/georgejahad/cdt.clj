@@ -34,7 +34,7 @@
         com.sun.jdi.event.LocatableEvent
         com.sun.jdi.IncompatibleThreadStateException)
 
-(def CDT-DISPLAY-MSG (atom false))
+(defonce CDT-DISPLAY-MSG (atom false))
 
 (defn cdt-display-msg [s]
   (if @CDT-DISPLAY-MSG
@@ -308,7 +308,16 @@
   (doseq [[n k] (keep-indexed vector (keys @bp-list))]
     (println n k)))
 
+(defn check-ns-loaded [sym]
+  (let [ns (second (re-find  #"(.*)[:/]" (str sym)))
+        class-regex (re-pattern (str ns "((\\$)|$)"))]
+    (when-not (seq (find-classes class-regex))
+      (throw (IllegalStateException.
+              (str "Namespace "
+                   ns " not loaded; bp can not be set until it is."))))))
+
 (defn set-bp-locations [sym locations]
+  (check-ns-loaded sym)
   (let [bps (doall (map create-bp locations))]
     (if (seq bps)
       (do
