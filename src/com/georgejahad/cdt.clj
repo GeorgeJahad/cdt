@@ -12,7 +12,8 @@
          [start-handling-break add-break-thread!]]
         [alex-and-georges.debug-repl])
   (:import java.util.ArrayList
-           clojure.lang.Compiler))
+           clojure.lang.Compiler
+           java.lang.management.ManagementFactory))
 
 (declare reval-ret* reval-ret-str reval-ret-obj
          disable-stepping show-data update-step-list print-frame
@@ -26,6 +27,7 @@
 (with-out-str (add-classpath (format "file://%s/../lib/sa-jdi.jar"
                                      (System/getProperty "java.home"))))
 (import com.sun.jdi.Bootstrap
+        com.sun.jdi.ClassType
         com.sun.jdi.request.EventRequest
         com.sun.jdi.event.BreakpointEvent
         com.sun.jdi.event.ExceptionEvent
@@ -102,8 +104,11 @@
 (defn set-source-path [path]
   (reset! source-path (remove-trailing-slashes path)))
 
+(defn get-source-path []
+  (.sourcePath (.location (.frame (ct) (cf)))))
+
 (defn get-source []
-  (let [file (.sourcePath (.location (.frame (ct) (cf))))
+  (let [file (get-source-path)
         paths (.split @source-path ":")]
     (if (= (first file) \/)
       file
@@ -214,6 +219,19 @@
        (.setValue (.get args "hostname") hostname)
        (reset! vm-data (.attach (conn) args))
        (start-event-handler))))
+
+(defn get-pid []
+   (first (.split (.getName
+                   (ManagementFactory/getRuntimeMXBean)) "@")))
+
+(defn cdt-attach-pid
+  ([] (cdt-attach-pid (get-pid)))
+  ([pid]
+     (reset! conn-data (first (get-connectors #"ProcessAttach")))
+     (let [args (.defaultArguments (conn))]
+     (.setValue (.get args "pid") pid)
+     (reset! vm-data (.attach (conn) args))
+     (start-event-handler))))
 
 (defn find-classes [class-regex]
   (regex-filter class-regex (.allClasses (vm))))
@@ -336,11 +354,11 @@
   `(set-bp-sym '~sym))
 
 
-(defn is-java? [fname]
-  (.endsWith fname ".java"))
+(defn java-fname? [fname]
+  (boolean (.endsWith fname ".java")))
 
 (defn append-dollar [fname s]
-  (if (is-java? fname)
+  (if (java-fname? fname)
     s
     (re-pattern (str s "\\$"))))
 
@@ -366,8 +384,18 @@
       (println fname (source-not-found))
       (throw (Exception. (str fname " " (source-not-found)))))))
 
+(defn current-type []
+  (-> (.frame (ct) (cf))
+      .location
+      .declaringType))
+
 (defn get-ns []
-  (symbol (unmunge (str (get-class (get-source))))))
+  (-> (current-type)
+      .name
+      (.split  "\\$")
+      first
+      unmunge
+      symbol))
 
 (defn get-locations [line class]
   (try
@@ -428,8 +456,12 @@
 (defn make-arg-list [ & args]
   (ArrayList. (or args [])))
 
-(defn remote-invoke [class-fn method-fn arglist thread frame]
-  (.invokeMethod (class-fn) thread (method-fn) arglist frame))
+;; INVOKE_SINGLE_THREADED is apparently somewhat dangerous, but allows
+;;  self-targeting.
+(def invoke-options (atom ClassType/INVOKE_SINGLE_THREADED))
+
+(defn remote-invoke [class-fn method-fn arglist thread]
+  (.invokeMethod (class-fn) thread (method-fn) arglist @invoke-options))
 
 (def remote-eval (partial remote-invoke co ev))
 
@@ -438,10 +470,10 @@
 (def remote-assoc (partial remote-invoke rt as))
 
 (defn remote-get [v]
-  (remote-invoke (constantly v) ge (make-arg-list) (ct) (cf)))
+  (remote-invoke (constantly v) ge (make-arg-list) (ct)))
 
 (defn remote-swap-root [v arg-list]
-  (remote-invoke (constantly v) sroot arg-list (ct) (cf)))
+  (remote-invoke (constantly v) sroot arg-list (ct)))
 
 (def remote-conj (partial remote-invoke rt cj))
 
@@ -450,10 +482,12 @@
                 (catch Exception e "source not found"))]
     (last  (.split sp "/"))))
 
-(defn clojure-frame? [frame fields]
-  (let [names (map #(.name %) fields)]
-    (or (.endsWith (get-file-name frame) ".clj")
-        (some #{"__meta"} names))))
+(defn clojure-frame? []
+  (-> (current-type)
+      .classLoader
+      .referenceType
+      .name
+      (.startsWith "clojure")))
 
 (def default-regex
      #"(^const__\d*$|^__meta$|^__var__callsite__\d*$|^__site__\d*__$|^__thunk__\d*__$)")
@@ -466,8 +500,9 @@
   ([f] (let [frame (.frame (ct) f)]
          (when-let [obj (.thisObject frame)]
            (let [fields (.fields (.referenceType obj))]
-             (if (clojure-frame? frame fields)
-               (remove-default-fields fields)))))))
+             (if (clojure-frame?)
+               (remove-default-fields fields)
+               fields #_(.allFields (.declaringType (.location frame)))))))))
 
 (def unmunge-seq
      (reverse (sort-by second compare clojure.lang.Compiler/CHAR_MAP)))
@@ -512,7 +547,7 @@
   (let [val (convert-primitives (val l))]
     (remote-assoc
      (make-arg-list m
-                    (remote-create-str (key l)) val) (ct) (cf))))
+                    (remote-create-str (key l)) val) (ct))))
 
 (def cdt-sym (atom nil))
 
@@ -525,7 +560,7 @@
 (defn gen-locals-and-closures
   ([] (gen-locals-and-closures (cf)))
   ([f] (let [frame (.frame (ct) f)
-             locals (fix-values (.getValues frame (.visibleVariables frame)))]
+             locals #_(fix-values (.getValues frame (-> frame .location .method .variables))) (fix-values (.getValues frame (.visibleVariables frame)))]
          (merge locals (gen-closure-map f)))))
 
 (defn add-locals-to-map []
@@ -549,7 +584,7 @@
     `(let ~(gen-local-bindings (get-cdt-sym) locals) ~form)))
 
 (defn setup-namespace [form]
-  (if (is-java? (get-source))
+  (if-not (clojure-frame?)
     form
     `(binding [*ns* (find-ns '~(get-ns))]
        ~form)))
@@ -566,9 +601,9 @@
 (defn gen-remote-form-and-eval [form]
   (-> (remote-create-str form)
       make-arg-list
-      (remote-read-string (ct) (cf))
+      (remote-read-string (ct))
       make-arg-list
-      (remote-eval (ct) (cf))))
+      (remote-eval (ct))))
 
 (defn reval-ret*
   [return-str? form locals?]
@@ -644,7 +679,7 @@
 
 (defn add-obj-to-vec [v obj]
   (remote-conj
-   (make-arg-list v obj) (ct) (cf)))
+   (make-arg-list v obj) (ct)))
 
 (defn get-instances [classes]
   (let [regexes (map gen-class-regex classes)]
