@@ -332,7 +332,7 @@
 
 (defn munge-sym [sym]
   (let [[ns sym] (.split (str sym) "/")]
-    (str (Compiler/munge ns) "\\$" (Compiler/munge sym))))
+    (str (Compiler/munge ns) "\\$" (Compiler/munge (str sym)))))
 
 (defn gen-class-pattern [sym]
   (let [s (munge-sym sym)]
@@ -348,7 +348,7 @@
 
 (defn check-ns-loaded [sym]
   (let [ns (second (re-find  #"(.*)[:/]" (str sym)))
-        class-regex (re-pattern (str ns "((\\$)|$)"))]
+        class-regex (re-pattern (str (Compiler/munge ns) "((\\$)|$)"))]
     (when-not (seq (find-classes class-regex))
       (throw (IllegalStateException.
               (str "Namespace "
@@ -460,6 +460,7 @@
         catch-request
         (doto (.createExceptionRequest (.eventRequestManager (vm))
                                        ref-type caught uncaught)
+          (.setSuspendPolicy EventRequest/SUSPEND_EVENT_THREAD)
           (.setEnabled true))]
     (swap! catch-list assoc class catch-request)
     (println "catch set on" class)))
@@ -643,6 +644,7 @@
   ([f] (->> (gen-locals-and-closures f)
             keys
             (map symbol)
+            sort
             (into []))))
 
 (defn locals []
