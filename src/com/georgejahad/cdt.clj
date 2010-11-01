@@ -156,18 +156,37 @@
       (print-current-location))
     (println (cdt-display-msg "already at bottom of stack"))))
 
-(defn handle-exception [e]
+(def exception-handler (atom nil))
+
+(def breakpoint-handler (atom nil))
+
+(def step-handler (atom nil))
+
+(defn set-handler [h f]
+  (reset! h f))
+
+(defn default-exception-handler [e]
   (println "\n\nException" e
-           (.catchLocation e) "hit\n\n")
-  #_(.exec (Runtime/getRuntime) "/tmp/cdt.script"))
+           (.catchLocation e) "hit\n\n"))
+
+(defn default-step-handler [e]
+  (println "\n\nStep" e "hit\n\n"))
+
+(defn default-breakpoint-handler [e]
+  (println "\n\nBreakpoint" e "hit\n\n"))
 
 (defn handle-event [e]
   (Thread/yield)
   (condp #(instance? %1 %2) e
-    BreakpointEvent (println "\n\nBreakpoint" e "hit\n\n")
-    ExceptionEvent (handle-exception e)
-    StepEvent  (println "\n\nStep" e "hit\n\n")
+    BreakpointEvent (@breakpoint-handler e)
+    ExceptionEvent (@exception-handler e)
+    StepEvent  (@step-handler e)
     :default (println "other event hit")))
+
+(defn setup-handlers []
+  (set-handler exception-handler default-exception-handler)
+  (set-handler breakpoint-handler default-breakpoint-handler)
+  (set-handler step-handler default-step-handler))
 
 (defn get-thread [#^LocatableEvent e]
   (.thread e))
@@ -200,6 +219,7 @@
 (defonce event-handler (atom nil))
 
 (defn start-event-handler []
+  (setup-handlers)
   (reset! event-handler (Thread. handle-events))
   (.start @event-handler))
 
@@ -221,17 +241,17 @@
        (start-event-handler))))
 
 (defn get-pid []
-   (first (.split (.getName
-                   (ManagementFactory/getRuntimeMXBean)) "@")))
+  (first (.split (.getName
+                  (ManagementFactory/getRuntimeMXBean)) "@")))
 
 (defn cdt-attach-pid
   ([] (cdt-attach-pid (get-pid)))
   ([pid]
      (reset! conn-data (first (get-connectors #"ProcessAttach")))
      (let [args (.defaultArguments (conn))]
-     (.setValue (.get args "pid") pid)
-     (reset! vm-data (.attach (conn) args))
-     (start-event-handler))))
+       (.setValue (.get args "pid") pid)
+       (reset! vm-data (.attach (conn) args))
+       (start-event-handler))))
 
 (defn find-classes [class-regex]
   (regex-filter class-regex (.allClasses (vm))))
