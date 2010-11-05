@@ -17,7 +17,7 @@
 
 (declare reval-ret* reval-ret-str reval-ret-obj
          disable-stepping show-data update-step-list print-frame
-         unmunge delete-bp-fn)
+         unmunge delete-bp-fn remote-create-str)
 
 ;; add-classpath is ugly, but handles the fact that tools.jar and
 ;; sa-jdi.jar are platform dependencies that I can't easily put in a
@@ -126,7 +126,8 @@
   `(try
      ~@body
      (catch IncompatibleThreadStateException e#
-       (println (cdt-display-msg "command can only be run after stopping at an breakpoint or exception")))))
+       (println (cdt-display-msg "command can only be run after stopping at a breakpoint or exception"))
+       (remote-create-str "IncompatibleThreadStateException"))))
 
 (defn source-not-found [] (cdt-display-msg "Source not found; check @source-path"))
 

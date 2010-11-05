@@ -2,7 +2,8 @@
   (:use [com.georgejahad.cdt] :reload-all)
   (:use [clojure.test])
   (:import java.util.concurrent.CountDownLatch
-           java.util.concurrent.TimeUnit))
+           java.util.concurrent.TimeUnit
+           com.sun.jdi.ObjectCollectedException))
 
 (defn ctest-closure []
   (let [a 1 b 2]
@@ -17,12 +18,23 @@
 (defn handler [latch]
   (fn [e] (.countDown latch)))
 
-(defn init-debugger-test-harness []
-  ;; bypass debug harness problems
-  (try (reval "") (catch com.sun.jdi.ObjectCollectedException e)))
+(defn reval-test* [form]
+  (try
+    (let [ret (safe-reval form true)]
+      (when (= ret 'IncompatibleThreadStateException)
+        (Thread/sleep 100))
+      ret)
+    (catch ObjectCollectedException e
+      ObjectCollectedException)))
+
+(defn reval-test [form]
+  (if-let [ret (first (drop-while #{ObjectCollectedException 'IncompatibleThreadStateException}
+                                  (take 5 (repeatedly #(reval-test* form)))))]
+    ret
+    (throw (IllegalStateException. "Intermittent connection to target"))))
 
 (def test-frame-str
-      "  0 com.georgejahad.cdt_test$test_func invoke [a b f this] cdt_test.clj:12\n")
+      "  0 com.georgejahad.cdt_test$test_func invoke [a b f this] cdt_test.clj:13\n")
 
 (deftest bp-tests
   (let [event-latch (CountDownLatch. 1)
@@ -34,9 +46,8 @@
       (send-off a (fn [_] (test-func 3 "test" #(.countDown finish-latch))))
       (is (.await event-latch 2 TimeUnit/SECONDS)))
     (testing "reval is able to determine proper values"
-      (init-debugger-test-harness)
-      (is (= [3 "test"] (reval [a b])))
-      (is (= "\"#<Namespace com.georgejahad.cdt-test>\"\n" (reval *ns*))))
+      (is (= [3 "test"] (reval-test '[a b])))
+      (is (= "\"#<Namespace com.georgejahad.cdt-test>\"\n" (reval-test '*ns*))))
     (testing "print-frame shows the frame"
       (is (= (with-out-str (print-frame)) test-frame-str)))
     (testing "cont allows function to finish"
@@ -49,17 +60,18 @@
 
 (deftest catch-tests
   (let [event-latch (CountDownLatch. 1)
-        finish-latch (CountDownLatch. 1)
         a (agent nil)]
     (testing "set-catch causes a catch event"
       (set-catch java.lang.ClassCastException :all)
       (set-handler exception-handler (handler event-latch))
-      (send-off a (fn [_] (* 1 {1 2})
-                    (.countDown finish-latch)))
+      (send-off a (fn [_] (* 1 {1 2})))
       (is (.await event-latch 2 TimeUnit/SECONDS)))
     (testing "reval is able to determine proper values"
-      (init-debugger-test-harness)
-      (is (= [1 {1 2}] (reval [x y]))))
-    (testing "delete-catch allows exception to be thrown"
+      (is (= [1 {1 2}] (reval-test '[x y]))))
+#_    (testing "delete-catch allows exception to be thrown"
       (delete-catch java.lang.ClassCastException)
-      (is (thrown? java.lang.ClassCastException (* 1 {1 2}))))))
+      (send-off a (fn [_] (try (* 1 {1 2}) (catch ClassCastException e :caught-ex))))
+          (println "starting thred test")
+      (await a)
+          (println "starting forth test")
+      (is (= @a :caught-ex)))))
