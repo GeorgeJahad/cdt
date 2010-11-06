@@ -13,7 +13,8 @@
         [alex-and-georges.debug-repl])
   (:import java.util.ArrayList
            clojure.lang.Compiler
-           java.lang.management.ManagementFactory))
+           java.lang.management.ManagementFactory
+           java.io.File))
 
 (declare reval-ret* reval-ret-str reval-ret-obj
          disable-stepping show-data update-step-list print-frame
@@ -22,9 +23,9 @@
 ;; add-classpath is ugly, but handles the fact that tools.jar and
 ;; sa-jdi.jar are platform dependencies that I can't easily put in a
 ;; repo:
-(with-out-str (add-classpath (format "file://%s/../lib/tools.jar"
+(with-out-str (add-classpath (format "file:///%s/../lib/tools.jar"
                                      (System/getProperty "java.home"))))
-(with-out-str (add-classpath (format "file://%s/../lib/sa-jdi.jar"
+(with-out-str (add-classpath (format "file:///%s/../lib/sa-jdi.jar"
                                      (System/getProperty "java.home"))))
 (import com.sun.jdi.Bootstrap
         com.sun.jdi.ClassType
@@ -99,7 +100,8 @@
 (defonce source-path (atom ""))
 
 (defn remove-trailing-slashes [s]
-  (str/replace s "/:" ":"))
+  (str/replace s (str File/separator File/pathSeparator)
+               File/pathSeparator))
 
 (defn set-source-path [path]
   (reset! source-path (remove-trailing-slashes path)))
@@ -110,10 +112,10 @@
 (defn get-source []
   (let [file (get-source-path)
         paths (.split @source-path ":")]
-    (if (= (first file) \/)
+    (if (= (first file) File/separatorChar)
       file
-      (first (filter #(.exists (java.io.File. %))
-                     (for [p paths] (str p "/" file)))))))
+      (first (filter #(.exists (File. %))
+                     (for [p paths] (str p File/separator file)))))))
 
 (defmacro check-unexpected-exception [& body]
   `(try
@@ -384,16 +386,19 @@
     (re-pattern (str s "\\$"))))
 
 (defn fix-class [c]
-  (str/replace c "/" "."))
+  (str/replace c File/separator "."))
 
 (defn get-class* [fname]
-  (->> (.split @source-path ":")
-       (map #(re-find (re-pattern (str % "/(.*)(.clj|.java)")) fname))
-       (remove nil?)
-       first
-       second
-       fix-class
-       re-pattern))
+  (let [class-pattern
+        #(re-find (re-pattern
+                   (str % File/separator "(.*)(.clj|.java)")) fname)]
+    (->> (.split @source-path ":")
+         (map class-pattern)
+         (remove nil?)
+         first
+         second
+         fix-class
+         re-pattern)))
 
 (defn get-class [fname]
   (when (= @source-path "")
@@ -502,7 +507,7 @@
 (defn get-file-name [frame]
   (let [sp (try (.sourcePath (.location frame))
                 (catch Exception e "source not found"))]
-    (last  (.split sp "/"))))
+    (last  (.split sp File/separator))))
 
 (defn clojure-frame? []
   (-> (current-type)
