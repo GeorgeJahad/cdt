@@ -28,17 +28,27 @@
       ObjectCollectedException)))
 
 (defn reval-test [form]
-  (if-let [ret (first (drop-while #{ObjectCollectedException 'IncompatibleThreadStateException}
-                                  (take 5 (repeatedly #(reval-test* form)))))]
+  (if-let [ret (first (drop-while
+                       #{ObjectCollectedException 'IncompatibleThreadStateException}
+                       (take 5 (repeatedly #(reval-test* form)))))]
     ret
     (throw (IllegalStateException. "Intermittent connection to target"))))
 
-(def test-frame-str
-      "  0 com.georgejahad.cdt_test$test_func invoke [a b f this] cdt_test.clj:13\n")
+(def test-frame-str-fmt
+     "  0 com.georgejahad.cdt_test$test_func invoke [a b f this] cdt_test.clj:%d\n")
+
+(defn test-func-str-format [offset]
+  (format test-frame-str-fmt
+          (+ offset (:line (meta #'test-func)))))
+
+(def test-frame-str (test-func-str-format 1))
+
+(def step-frame-str (test-func-str-format 2))
 
 (deftest bp-tests
   (let [event-latch (CountDownLatch. 1)
         finish-latch (CountDownLatch. 1)
+        step-latch (CountDownLatch. 1)
         a (agent nil)]
     (testing "set-bp causes a breakpoint event"
       (set-bp com.georgejahad.cdt-test/test-func)
@@ -50,6 +60,10 @@
       (is (= "\"#<Namespace com.georgejahad.cdt-test>\"\n" (reval-test '*ns*))))
     (testing "print-frame shows the frame"
       (is (= (with-out-str (print-frame)) test-frame-str)))
+#_    (testing "step goes to next line"
+      (set-handler step-handler (handler step-latch))
+      (step-over)
+      (is (= (with-out-str (print-frame)) step-frame-str)))
     (testing "cont allows function to finish"
       (cont)
       (is (.await finish-latch 2 TimeUnit/SECONDS)))
@@ -60,7 +74,8 @@
 
 (deftest catch-tests
   (let [event-latch (CountDownLatch. 1)
-        a (agent nil)]
+        a (agent nil)
+        b (agent nil)]
     (testing "set-catch causes a catch event"
       (set-catch java.lang.ClassCastException :all)
       (set-handler exception-handler (handler event-latch))
@@ -68,10 +83,9 @@
       (is (.await event-latch 2 TimeUnit/SECONDS)))
     (testing "reval is able to determine proper values"
       (is (= [1 {1 2}] (reval-test '[x y]))))
-#_    (testing "delete-catch allows exception to be thrown"
+    (testing "delete-catch allows exception to be thrown"
       (delete-catch java.lang.ClassCastException)
-      (send-off a (fn [_] (try (* 1 {1 2}) (catch ClassCastException e :caught-ex))))
-          (println "starting thred test")
-      (await a)
-          (println "starting forth test")
-      (is (= @a :caught-ex)))))
+      (send-off b (fn [_] (try (* 1 {1 2})
+                               (catch ClassCastException e :caught-ex))))
+      (await b)
+      (is (= @b :caught-ex)))))
