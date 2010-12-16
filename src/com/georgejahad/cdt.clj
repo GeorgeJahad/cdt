@@ -106,8 +106,11 @@
 (defn set-source-path [path]
   (reset! source-path (remove-trailing-slashes path)))
 
+(defn get-frame []
+  (.frame (ct) (cf)))
+
 (defn get-source-path []
-  (.sourcePath (.location (.frame (ct) (cf)))))
+  (.sourcePath (.location (get-frame))))
 
 (defn get-source []
   (let [file (get-source-path)
@@ -136,7 +139,7 @@
 (defn print-current-location []
   (try
     (check-incompatible-state
-     (let [line (.lineNumber (.location (.frame (ct) (cf))))]
+     (let [line (.lineNumber (.location (get-frame)))]
        (if-let [path (get-source)]
          (do
            (println "CDT location is" (format "%s:%d:%d" path line (cf)))
@@ -159,11 +162,11 @@
       (print-current-location))
     (println (cdt-display-msg "already at bottom of stack"))))
 
-(def exception-handler (atom nil))
+(defonce exception-handler (atom nil))
 
-(def breakpoint-handler (atom nil))
+(defonce breakpoint-handler (atom nil))
 
-(def step-handler (atom nil))
+(defonce step-handler (atom nil))
 
 (defn set-handler [h f]
   (reset! h f))
@@ -201,18 +204,23 @@
     (disable-stepping)
     (print-current-location)))
 
+(defonce event-handler-exceptions (atom []))
+
 (defmacro handle-event-exceptions [& body]
   `(try
      ~@body
      (catch Exception e#
        (println (cdt-display-msg "exception in event handler")
                 e# "You may need to restart CDT")
+       (swap! event-handler-exceptions conj e#)
        (Thread/sleep 500))))
+
+(defonce event-handler-done (atom false))
 
 (defn handle-events []
   (println (cdt-display-msg "CDT ready"))
   (let [q (.eventQueue (vm))]
-    (while true
+    (while (not @event-handler-done)
       (handle-event-exceptions
        (let [s (.remove q)]
          (doseq [i (iterator-seq (.eventIterator s))]
@@ -220,10 +228,13 @@
          (finish-set s))))))
 
 (defonce event-handler (atom nil))
+(defn stop-event-handler []
+  (reset! event-handler-done true))
 
 (defn start-event-handler []
   (setup-handlers)
   (reset! event-handler (Thread. handle-events))
+  (reset! event-handler-done false)
   (.start @event-handler))
 
 (defn cdt-attach-core []
@@ -411,7 +422,7 @@
       (throw (Exception. (str fname " " (source-not-found)))))))
 
 (defn current-type []
-  (-> (.frame (ct) (cf))
+  (-> (get-frame)
       .location
       .declaringType))
 
@@ -509,12 +520,17 @@
                 (catch Exception e "source not found"))]
     (last  (.split sp File/separator))))
 
+(defn get-source-name []
+  (try (-> (get-frame)
+           .location
+           .sourceName) (catch Exception e nil)))
+
 (defn clojure-frame? []
-  (-> (current-type)
-      .classLoader
-      .referenceType
-      .name
-      (.startsWith "clojure")))
+  (if-let [name (get-source-name)]
+    (.endsWith name ".clj")
+    (do
+      (println "source name unavailable")
+      (-> (get-frame) .location .method .name (.endsWith "nvoke")))))
 
 (def default-regex
      #"(^const__\d*$|^__meta$|^__var__callsite__\d*$|^__site__\d*__$|^__thunk__\d*__$)")
@@ -660,7 +676,7 @@
                             (reval-ret-str (local-names) true))))))
 
 (defn print-frame
-  ([] (print-frame (cf) (.frame (ct) (cf))))
+  ([] (print-frame (cf) (get-frame)))
   ([i f]
      (let [l (.location f)
            ln (try (str (local-names i)) (catch Exception e "[]"))
