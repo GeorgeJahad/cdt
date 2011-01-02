@@ -1,0 +1,264 @@
+#title Emacs Front End to the Clojure Debugging Toolkit
+
+* What is it?
+
+cdt.el is an Emacs based front end to the
+[[http://georgejahad.com/clojure/cdt.html][Clojure Debugging Toolkit]].  The CDT is a Clojure command
+line debugger which allows you to debug remote vm's through the
+[[http://download.oracle.com/javase/1.5.0/docs/guide/jpda/jdi/][Java Debug Interface]].
+
+With cdt.el, you can step, set breakpoints, catch exceptions, eval
+remote clojure expressions, and go up and down the stack, in a much
+more natural way than with just the command line.  
+
+When you want to eval the s-expr under the cursor, hit ^x^a^p!
+
+cdt.el will then "reval" the s-expr, which means it will serialize it,
+send it to the remote vm, evaluate it there in the context of the
+current stack frame, and display the result on the mode line.
+
+* Setup
+*** Download CDT
+Install from github like so:
+
+<example>
+git clone git://github.com/GeorgeJahad/cdt.git
+cd cdt
+lein deps
+</example>
+
+*** Get Clojure Source
+You'll want to do a full source install of clojure. You don't
+want to just the clojure jars, because CDT works on java files as
+well, and the java source isn't usually in the jars.
+
+Make sure the source is the same version as the jars you're using in
+the target vm or the line numbers will be off as you step through the
+code.  If you are using Clojure 1.2 master, the easiest way to get the
+corresponding source is:
+
+http://github.com/downloads/clojure/clojure/clojure-1.2.0.zip
+
+http://github.com/downloads/clojure/clojure-contrib/clojure-contrib-1.2.0.zip
+
+*** Configure Emacs
+Next you'll need to configure emacs, using something like the
+following:
+
+<example>
+(progn
+  (setq cdt-dir "/home/gbj/incoming/test/cdt")
+  (setq cdt-source-path "/home/gbj/incoming/test/zip/clojure-1.2.0/src/jvm:/home/gbj/incoming/test/zip/clojure-1.2.0/src/clj:/home/gbj/incoming/test/zip/clojure-contrib-1.2.0/src/main/clojure:")
+  (load-file (format "%s/ide/emacs/cdt.el" cdt-dir)))
+</example>
+
+Change the cdt-dir value to be the directory you cd'd into to run
+"lein deps" above.  Fix the cdt-source-path to point to the clojure
+"src/jvm" and "src/clj" as well as the contrib "src/main/clojure"
+directories you unzipped above.
+
+Put the lines in your .emacs and eval them,  (or restart emacs if
+you don't know how.)
+
+*** Configure target vm
+Set up your target vm by adding the following args to the
+java command line and start it up:
+
+<example>
+-agentlib:jdwp=transport=dt_socket,address=8021,server=y,suspend=n
+</example>
+
+It'll look something like this:
+<example>
+java -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=8021 -client -cp /home/gbj/incoming/test/zip/clojure-contrib-1.2.0/target/clojure-contrib-1.2.0.jar:/home/gbj/incoming/test/zip/clojure-1.2.0/clojure.jar clojure.main --repl
+</example>
+
+*** Connect
+Finally connect to your target like this:
+<example>
+M-x cdt
+</example>
+
+When it asks for a port, enter 8021.  Wait for a few seconds for it to
+connect.  When it has, you'll see "starting event handler" in the
+repl, and "CDT ready" on the mode line.
+
+* Test Drive
+In the instructions below, it's important to remember that you are
+switching back and forth between the repls of two separate vm's: the
+target repl is for the vm being debugged, while the CDT repl is
+running in the vm doing the debugging.
+
+Also, I know the keystroke commands below are long; I'll make them
+more configurable for the next release.  For now, they are each three
+characters long, starting with ^x^a.
+
+*** Breakpoints/Stepping/Reval
+
+In the target repl, run:
+
+<example>
+(clojure.set/difference #{1 2} #{2 3})
+</example>
+and confirm that it returns #{1}
+
+In the CDT repl, set a breakpoint like so:
+<example>
+(set-bp clojure.set/difference)
+</example>
+
+Then rerun the difference command from the target; you'll see the
+source buffer pop up, as the bp is hit; the triangle on the left
+indicates the current line.
+
+Now put the cursor on the s1 and hit ^x^a^p, to see it's
+value, #{1 2}, on the mode line.  Do the same for s2 and count.
+Put the cursor on the left paren in front of the "(count s2)" and reval
+it to see that value as well.
+
+Hit ^x^a^n to go to the next line, "(reduce disj s1 s2)"; reval it and
+confirm that you see the #{1} below.
+
+Go up and down the stack frame confirming that you can reval things in
+different stack frames.
+
+Then hit ^x^a^g to continue, and see the target repl finish.
+
+Run the target repl command again; when the source buffer pops up this time,
+set a line breakpoint, by moving the cursor to the  "(reduce disj s1
+s2)" line, and hit ^x^a^b.  Continue and confirm that the second bp is
+hit.
+
+Continue to exit, then view and delete the bps from the CDT repl, like so:  
+<example>
+(print-bps)
+0 clojure.set:59
+1 clojure.set/difference
+
+
+(delete-bp clojure.set:59)
+(delete-all-breakpoints)
+</example>
+
+*** Catching exceptions
+From the target repl, confirm that a bad multiply generates an
+exception:
+
+<example>
+(* 1 {1 2})
+java.lang.ClassCastException: clojure.lang.PersistentArrayMap cannot be cast to java.lang.Number (NO_SOURCE_FILE:0)
+</example>
+
+Set a catchpoint from the CDT repl:
+
+<example>
+(set-catch java.lang.ClassCastException :all)
+</example>
+
+Run the multiply again.  Confirm that the source for
+clojure/lang/Numbers.java pops up.  Because this is a java file, the
+jde mode may load and move the current line away from the exception.
+If you don't see the triangle, hit ^x^a^h; you should be in the
+multiply method.
+
+Revaling the x and y parameters shows the 1 and {1 2} you passed into
+the multiply above.
+
+
+* Keystroke commands
+All these commands should work on both Clojure and Java source buffers.
+Keystroke   ||  Command Executed
+
+C-x C-a C-b |	set Breakpoint, on the current line
+C-x C-a C-n |   Next 
+C-x C-a C-s |	Step
+C-x C-a C-i |	step the smallest possible Increment
+C-x C-a C-f |	Finish, which runs to the end of the current function
+C-x C-a C-g |	Go/continue
+C-x C-a C-u |	Up stackframe
+C-x C-a C-d |	Down stackframe
+C-x C-a C-p |	Print/reval the sexpr/symbol under the cursor.
+C-x C-a C-h |	go Here to the current line in the current stack frame
+C-x C-a C-r |	go to the cdt Repl
+C-x C-a C-t |	print the value of the This pointer
+C-x C-a s   |	Status of current thread/suspended or not
+
+
+
+* Other useful commands that can be run from the CDT command line
+Command   ||  Output
+(reval <sexpr>)   | Remotely eval an arbitrarily complicated sexpr, including redefining functions.
+(set-source-path) | Update the paths pointing to your source files
+(System/exit 0)   | Exit
+
+* Caveats
+*** Debugger Toolbar buttons don't work yet
+To be honest, I didn't even realize they existed until I finished this
+release and tried running on a vanilla emacs.  (I never have the
+toolbar visible because I don't want to waste the screen space.)
+I'll add them soon.
+
+*** Some locals in higher stack frames appear null due to Locals Clearing
+One major weakness of CDT I've found is that sometimes valid non-null
+locals appear null.  I suspect it's an unpleasant side-effect of the
+"locals clearing" the compiler does to reduce the danger of
+head-holding lazy seqs:
+http://groups.google.com/group/clojure/msg/9b4e268b85c20cd6%29
+
+I've talked to Rich about this a bit, and I'm hoping for a 
+workaround.  Till then, if you go up or down the stack frame you can
+usually find other copies of the var that actually do show its
+correct value.  In general, I haven't found it to be much of an issue
+when debugging real world problems.
+
+*** Can't reval vars in let bindings until the let body
+Reval'ing a var will fail if the current line is still in the let
+binding that defines it.  This should do-able, but I haven't figured it
+out yet.
+
+In the meantime, if you want to see what the dependent vars are set to,
+you'll either have to step into their corresponding initializers, or
+just step all the way out of the bindings into the let body.
+
+*** Reload resets breakpoints
+The JDI sets breakpoints on classes; if you do anything to reload
+those classes, (reval'ing a require/use/defn), the breakpoints will
+remain on the old classes, which will no longer be used.  They'll need
+to be reset by hand for now.
+
+*** Editing file buffers changes line numbers!
+This one is obvious, but it's so easy to do from within emacs, that I
+forget periodically, and you probably will too, and then wonder why the
+debugger is not going to the right line number.
+
+*** Dynamic bindings are only correct in frame 0
+*reval* is always invoked in the context of frame 0 on a suspended
+thread.  The lexical scope for other frames is handled by
+pulling them out of the jdi and passing them into reval when it
+is invoked.  
+
+Because dynamic bindings are a clojure construct, the jdi
+doesn't know when they get set, so they can't be simulated.
+Thus reval'ing a form that depends on a dynamic binding
+will only be correct in frame 0.
+
+*** Haven't tested on Windows
+but it almost certainly doesn't work there yet.  I'm happy to help make that
+happen if there is interest.
+
+* Other IDE's
+I should emphasize that there is nothing Emacs specific about the CDT.  In fact, I've been so spoiled by Clojure, I don't even enjoy writing Elisp any more.  This front end was written in Emacs because that's the IDE I'm most familiar with.  The CDT command line is IDE agnostic; it should be easy, (dare I say fun?), to port it to other IDE's.  If there's interest, I'll detail how in a future post.
+
+* Still Undone
+  modification of locals, debugging local vm, and many other secret
+  plans I have for complete world domination.
+
+
+* Thanks
+Many thanks to Fogus for the kind words, and to the Runa gang for their continuing encouragement!
+
+
+* Comments/Suggestions
+
+Send any comments/suggestions to George Jahad at "george-clojure at blackbirdsystems.net" or to the main clojure mailing list: http://groups.google.com/group/clojure
+
