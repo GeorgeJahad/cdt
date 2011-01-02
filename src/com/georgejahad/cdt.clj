@@ -102,7 +102,8 @@
 
 (defn remove-trailing-slashes [s]
   (str/replace s (str File/separator File/pathSeparator)
-               File/pathSeparator))
+               File/pathSeparator)
+  (str/replace s (re-pattern (str File/separator "$")) ""))
 
 (defn set-source-path [path]
   (reset! source-path (remove-trailing-slashes path)))
@@ -407,22 +408,47 @@
 (defn fix-class [c]
   (str/replace c File/separator "."))
 
-(defn get-class* [fname]
-  (let [class-pattern
-        #(re-find (re-pattern
-                   (str % File/separator "(.*)(.clj|.java)")) fname)]
-    (->> (.split @source-path ":")
-         (map class-pattern)
+(defn gen-paths []
+  (map remove-trailing-slashes
+       (concat (.classPath (vm))
+               (.split @source-path ":"))))
+
+(defn get-file [fname path]
+  (second (re-find (re-pattern
+                    (str path File/separator "(.*)(.clj|.java)")) fname)))
+
+(defn get-jar-entries [path]
+  (map str (enumeration-seq (.entries (java.util.jar.JarFile. path)))))
+
+(defn remove-suffix [fname]
+  (first (.split fname "\\.")))
+
+(defn get-jar [fname path]
+  (when-let [short-name
+             (->> (get-jar-entries path)
+                  (filter #(re-find (re-pattern (str "^" % "$")) fname))
+                  first)]
+    (remove-suffix short-name)))
+
+(defn get-jar-or-file [fname path]
+  (if (re-find #"\.jar" path)
+    (get-jar fname path)
+    (get-file fname path)))
+
+(defn get-basename [fname]
+  (if-let [basename (second (.split fname "\\.jar:"))]
+    (remove-suffix basename)
+    (->> (gen-paths)
+         (map (partial get-jar-or-file fname))
          (remove nil?)
-         first
-         second
-         fix-class
-         re-pattern)))
+         first)))
+
+(defn get-class* [fname]
+  (->> (get-basename fname)
+       fix-class
+       re-pattern))
 
 (defn get-class [fname]
-  (when (= @source-path "")
-    (throw (IllegalStateException.
-            "source-path must be set before calling line-bp")))
   (try
     (get-class* fname)
     (catch Exception e

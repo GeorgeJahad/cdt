@@ -8,6 +8,7 @@
 
 (require 'gud)
 (require 'thingatpt)
+(require 'arc-mode)
 
 (defvar cdt-dir "")
 (defvar cdt-source-path "")
@@ -65,7 +66,38 @@
   (gud-call (format "(cdt-attach %s)" port))
   (run-hooks 'jdb-mode-hook))
 
-(setq cdt-el-version .1)
+(setq cdt-el-version .2)
+
+(defun get-jar-entry (file entry)
+     (set-buffer (find-file-noselect file t))
+     (goto-char (point-min))
+     (re-search-forward (concat "  " entry "$"))
+     (let ((buffer (save-window-excursion
+                     (archive-extract)
+                     (current-buffer))))
+       (set-buffer buffer)
+       (goto-char (point-min))
+       buffer))
+
+(defun check-for-jars (file)
+  (if (string-equal (substring file 0 1) "!")
+      (progn
+	(string-match "!\\(.+\\)!\\(.+\\)" file)
+	(get-jar-entry (match-string 1 file) (match-string 2 file)))
+    (find-file-noselect file 'nowarn)))
+
+(defun gud-find-file (file)
+  (while (string-match "//+" file)
+    (setq file (replace-match "/" t t file)))
+  (let ((minor-mode gud-minor-mode)
+	(buf (check-for-jars file)))
+    (when buf
+      ;; Copy `gud-minor-mode' to the found buffer to turn on the menu.
+      (with-current-buffer buf
+	(set (make-local-variable 'gud-minor-mode) minor-mode)
+	(set (make-local-variable 'tool-bar-map) gud-tool-bar-map)
+	(make-local-variable 'gud-keep-buffer))
+      buf)))
 
 (defun gud-display-frame ()
   "Find and obey the last filename-and-line marker from the debugger.
@@ -79,9 +111,13 @@ Obeying it means displaying in another window the specified file and line."
 	  gud-last-frame nil)))
 
 (defun set-frame ()
-  (setq gud-last-frame
-	(cons (match-string 1 gud-marker-acc)
-	      (string-to-number (match-string 2 gud-marker-acc))))
+  (let ((filename
+	 (if (not (= (length (match-string 4 gud-marker-acc)) 0))
+	     (format "!%s!%s" (match-string 4 gud-marker-acc) (match-string 1 gud-marker-acc))
+	     (match-string 1 gud-marker-acc))))
+    (setq gud-last-frame
+	  (cons filename
+		(string-to-number (match-string 2 gud-marker-acc)))))
   (setq cdt-frame (match-string 3 gud-marker-acc)))
 
 (defun display-match ()
@@ -106,7 +142,7 @@ Obeying it means displaying in another window the specified file and line."
 
   (let (file-found)
     ;; Process each complete marker in the input.
-    (filter-input "CDT location is \\(.+\\):\\(.+\\):\\(.+\\)" 'set-frame)
+    (filter-input "CDT location is \\(.+\\):\\(.+\\):\\(.+\\):\\(.+\\)" 'set-frame)
     (filter-input "CDT Display Message: \\(.+\\)$" 'display-match) 
 
 
