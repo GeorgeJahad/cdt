@@ -34,6 +34,7 @@
         com.sun.jdi.event.ExceptionEvent
         com.sun.jdi.request.StepRequest
         com.sun.jdi.event.StepEvent
+        com.sun.jdi.event.MethodEntryEvent
         com.sun.jdi.event.LocatableEvent
         com.sun.jdi.IncompatibleThreadStateException)
 
@@ -168,6 +169,8 @@
 
 (defonce step-handler (atom nil))
 
+(defonce method-entry-handler (atom nil))
+
 (defn set-handler [h f]
   (reset! h f))
 
@@ -178,6 +181,9 @@
 (defn default-step-handler [e]
   (println "\n\nStep" e "hit\n\n"))
 
+(defn default-method-entry-handler [e]
+  (println "\n\nMethod entry" e "hit\n\n"))
+
 (defn default-breakpoint-handler [e]
   (println "\n\nBreakpoint" e "hit\n\n"))
 
@@ -187,12 +193,14 @@
     BreakpointEvent (@breakpoint-handler e)
     ExceptionEvent (@exception-handler e)
     StepEvent  (@step-handler e)
+    MethodEntryEvent  (@method-entry-handler e)
     :default (println "other event hit")))
 
 (defn setup-handlers []
   (set-handler exception-handler default-exception-handler)
   (set-handler breakpoint-handler default-breakpoint-handler)
-  (set-handler step-handler default-step-handler))
+  (set-handler step-handler default-step-handler)
+  (set-handler method-entry-handler default-method-entry-handler))
 
 (defn get-thread [#^LocatableEvent e]
   (.thread e))
@@ -213,7 +221,7 @@
        (println (cdt-display-msg "exception in event handler")
                 e# "You may need to restart CDT")
        (swap! event-handler-exceptions conj e#)
-       (Thread/sleep 500))))
+       (Thread/sleep 5000))))
 
 (defonce event-handler-done (atom false))
 
