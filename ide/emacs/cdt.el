@@ -142,7 +142,7 @@ Obeying it means displaying in another window the specified file and line."
 
   (let (file-found)
     ;; Process each complete marker in the input.
-    (filter-input "CDT location is \\(.+\\):\\(.+\\):\\(.+\\):\\(.+\\)" 'set-frame)
+    (filter-input "CDT location is \\(.+\\):\\(.+\\):\\(.+\\):\\(.*\\)" 'set-frame)
     (filter-input "CDT Display Message: \\(.+\\)$" 'display-match) 
 
 

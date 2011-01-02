@@ -111,16 +111,48 @@
 (defn get-frame []
   (.frame (ct) (cf)))
 
+(defn gen-paths []
+  (map remove-trailing-slashes
+       (concat (.classPath (vm))
+               (.split @source-path ":"))))
+
 (defn get-source-path []
   (.sourcePath (.location (get-frame))))
 
+(defn get-jar-entries [path]
+  (map str (enumeration-seq (.entries (java.util.jar.JarFile. path)))))
+
+(defn remove-suffix [fname]
+  (first (.split fname "\\.")))
+
+(defn get-jar [fname path]
+  (->> (get-jar-entries path)
+       (filter #(re-find (re-pattern (str "^" % "$")) fname))
+       first))
+
+(defn get-file-source [fname path]
+  (let [full-path  (str path File/separator fname)]
+    (when (.exists (File. full-path))
+      {:name full-path})))
+
+(defn get-jar-source [fname path]
+  (when-let [short-name (get-jar fname path)]
+    {:name short-name
+     :jar path}))
+
+(defn get-source-from-jar-or-file [fname path]
+  (if (re-find #"\.jar" path)
+    (get-jar-source fname path)
+    (get-file-source fname path)))
+
 (defn get-source []
-  (let [file (get-source-path)
-        paths (.split @source-path ":")]
+  (let [file (get-source-path)]
     (if (= (first file) File/separatorChar)
       file
-      (first (filter #(.exists (File. %))
-                     (for [p paths] (str p File/separator file)))))))
+      (->> (gen-paths)
+           (map (partial get-source-from-jar-or-file file))
+           (remove nil?)
+           first))))
 
 (defmacro check-unexpected-exception [& body]
   `(try
@@ -142,9 +174,10 @@
   (try
     (check-incompatible-state
      (let [line (.lineNumber (.location (get-frame)))]
-       (if-let [path (get-source)]
-         (do
-           (println "CDT location is" (format "%s:%d:%d" path line (cf)))
+       (if-let [{:keys [name jar]} (get-source)]
+         (let [s (format "%s:%d:%d:" name line (cf))
+               s (if jar (str s jar) s)]
+           (println "CDT location is" s)
            (print-frame))
          (println (source-not-found)))))
     (catch Exception _ (println (source-not-found)))))
@@ -408,38 +441,24 @@
 (defn fix-class [c]
   (str/replace c File/separator "."))
 
-(defn gen-paths []
-  (map remove-trailing-slashes
-       (concat (.classPath (vm))
-               (.split @source-path ":"))))
-
-(defn get-file [fname path]
+(defn get-file-class [fname path]
   (second (re-find (re-pattern
                     (str path File/separator "(.*)(.clj|.java)")) fname)))
 
-(defn get-jar-entries [path]
-  (map str (enumeration-seq (.entries (java.util.jar.JarFile. path)))))
-
-(defn remove-suffix [fname]
-  (first (.split fname "\\.")))
-
-(defn get-jar [fname path]
-  (when-let [short-name
-             (->> (get-jar-entries path)
-                  (filter #(re-find (re-pattern (str "^" % "$")) fname))
-                  first)]
+(defn get-jar-class [fname path]
+  (when-let [short-name (get-jar fname path)]
     (remove-suffix short-name)))
 
-(defn get-jar-or-file [fname path]
+(defn get-class-from-jar-or-file [fname path]
   (if (re-find #"\.jar" path)
-    (get-jar fname path)
-    (get-file fname path)))
+    (get-jar-class fname path)
+    (get-file-class fname path)))
 
 (defn get-basename [fname]
   (if-let [basename (second (.split fname "\\.jar:"))]
     (remove-suffix basename)
     (->> (gen-paths)
-         (map (partial get-jar-or-file fname))
+         (map (partial get-class-from-jar-or-file fname))
          (remove nil?)
          first)))
 
