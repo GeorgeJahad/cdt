@@ -99,6 +99,7 @@
     (println (str (cdt-display-msg "Status of current thread is") s "suspended."))))
 
 (defonce source-path (atom ""))
+(defonce prefix-path (atom ""))
 
 (defn remove-trailing-slashes [s]
   (str/replace s (str File/separator File/pathSeparator)
@@ -108,13 +109,19 @@
 (defn set-source-path [path]
   (reset! source-path (remove-trailing-slashes path)))
 
+(defn set-prefix-path [path]
+  (reset! prefix-path (remove-trailing-slashes path)))
+
 (defn get-frame []
   (.frame (ct) (cf)))
 
 (defn gen-paths []
-  (map remove-trailing-slashes
-       (concat (.classPath (vm))
-               (.split @source-path ":"))))
+  (remove #{""}
+          (map remove-trailing-slashes
+               (concat
+                (.split @prefix-path File/pathSeparator)
+                (.classPath (vm))
+                (.split @source-path File/pathSeparator)))))
 
 (defn get-source-path []
   (.sourcePath (.location (get-frame))))
@@ -148,7 +155,7 @@
 (defn get-source []
   (let [file (get-source-path)]
     (if (= (first file) File/separatorChar)
-      file
+      {:name file}
       (->> (gen-paths)
            (map (partial get-source-from-jar-or-file file))
            (remove nil?)
