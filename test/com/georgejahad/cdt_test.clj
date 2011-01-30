@@ -18,21 +18,8 @@
 (defn handler [latch]
   (fn [e] (.countDown latch)))
 
-(defn reval-test* [form]
-  (try
-    (let [ret (safe-reval form true)]
-      (when (= ret 'IncompatibleThreadStateException)
-        (Thread/sleep 100))
-      ret)
-    (catch ObjectCollectedException e
-      ObjectCollectedException)))
-
 (defn reval-test [form]
-  (if-let [ret (first (drop-while
-                       #{ObjectCollectedException 'IncompatibleThreadStateException}
-                       (take 5 (repeatedly #(reval-test* form)))))]
-    ret
-    (throw (IllegalStateException. "Intermittent connection to target"))))
+  (safe-reval form true))
 
 (def test-frame-str-fmt
      "  0 com.georgejahad.cdt_test$test_func invoke [a b f this] cdt_test.clj:%d\n")

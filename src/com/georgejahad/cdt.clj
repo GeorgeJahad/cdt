@@ -36,7 +36,8 @@
         com.sun.jdi.event.StepEvent
         com.sun.jdi.event.MethodEntryEvent
         com.sun.jdi.event.LocatableEvent
-        com.sun.jdi.IncompatibleThreadStateException)
+        com.sun.jdi.IncompatibleThreadStateException
+        com.sun.jdi.ObjectCollectedException)
 
 (defonce CDT-DISPLAY-MSG (atom false))
 
@@ -548,8 +549,21 @@
     (.deleteEventRequest (.eventRequestManager (vm)) catch-request)
     (swap! catch-list dissoc class)))
 
+(defn create-disabled-str [form]
+  (let [s (.mirrorOf (vm) (str form))]
+    ;; NEED TO RE-ENABLE SOMEWHERE!
+    (try
+      (.disableCollection s)
+      s
+      (catch ObjectCollectedException e
+        (println "object collected " form)
+        nil))))
+
 (defn remote-create-str [form]
-  (.mirrorOf (vm) (str form)))
+  (if-let [s (first (remove nil?
+                            (take 10 (repeatedly #(create-disabled-str form)))))]
+    s
+    (throw (IllegalStateException. "object collected 10 times"))))
 
 (defn make-arg-list [ & args]
   (ArrayList. (or args [])))
