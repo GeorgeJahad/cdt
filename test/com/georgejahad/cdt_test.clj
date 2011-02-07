@@ -10,8 +10,11 @@
     (fn [a d] ([a b d]))))
 
 (defn test-func [a b f]
-  (pr-str [a b])
-  (f))
+  (let [c (+ 1 2)
+        d (+ c 4)
+        e (+ d 5)]
+    (pr-str [a b c d e])
+    (f)))
 
 (defonce attach (cdt-attach-pid))
 
@@ -22,15 +25,19 @@
   (safe-reval form true))
 
 (def test-frame-str-fmt
-     "  0 com.georgejahad.cdt_test$test_func invoke [a b f this] cdt_test.clj:%d\n")
+     "  0 com.georgejahad.cdt_test$test_func invoke %s cdt_test.clj:%d\n")
 
-(defn test-func-str-format [offset]
-  (format test-frame-str-fmt
+(defn test-func-str-format [var-string offset]
+  (format test-frame-str-fmt var-string
           (+ offset (:line (meta #'test-func)))))
 
-(def test-frame-str (test-func-str-format 1))
+(def test-frame-str (test-func-str-format "[a b f this]" 1))
 
-(def step-frame-str (test-func-str-format 2))
+;; the next two defs will have to be corrected once this is fixed:
+;; http://dev.clojure.org/jira/browse/CLJ-734
+(def step-frame-str (test-func-str-format "[a b f this]" 2))
+
+(def line-bp-frame-str (test-func-str-format "[a b f this]" 2))
 
 (deftest bp-tests
   (let [event-latch (CountDownLatch. 1)
@@ -47,10 +54,20 @@
       (is (= "\"#<Namespace com.georgejahad.cdt-test>\"\n" (reval-test '*ns*))))
     (testing "print-frame shows the frame"
       (is (= (with-out-str (print-frame)) test-frame-str)))
-#_    (testing "step goes to next line"
+    (testing "step goes to next line"
       (set-handler step-handler (handler step-latch))
       (step-over)
+      (Thread/sleep 100)
       (is (= (with-out-str (print-frame)) step-frame-str)))
+    ;;test failing because :file doesn't contain complete path
+#_    (testing "line-bp causes breakpoint event"
+      (let [file (:file (meta #'test-func))
+            line (+ 2 (:line (meta #'test-func)))]
+        (line-bp file line))
+      (cont)
+      (Thread/sleep 100)
+      (is (= 7 (reval-test 'd))))
+    (is (= (with-out-str (print-frame)) line-bp-frame-str))
     (testing "cont allows function to finish"
       (cont)
       (is (.await finish-latch 2 TimeUnit/SECONDS)))
