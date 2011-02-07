@@ -35,7 +35,7 @@
         com.sun.jdi.request.StepRequest
         com.sun.jdi.event.StepEvent
         com.sun.jdi.event.MethodEntryEvent
-        com.sun.jdi.event.MethodEntryEvent
+        com.sun.jdi.event.LocatableEvent
         com.sun.jdi.event.ThreadStartEvent
         com.sun.jdi.IncompatibleThreadStateException
         com.sun.jdi.ObjectCollectedException)
@@ -334,23 +334,23 @@
 (defn find-methods [class method-regex]
   (regex-filter method-regex (.methods class)))
 
-(def rt (memoize #(first (find-classes #"clojure.lang.RT"))))
+(def rt (memoize #(first (find-classes #"clojure.lang.RT$"))))
 
-(def co (memoize #(first (find-classes #"clojure.lang.Compiler"))))
+(def co (memoize #(first (find-classes #"clojure.lang.Compiler$"))))
 
-(def va (memoize #(first (find-classes #"clojure.lang.Var"))))
+(def va (memoize #(first (find-classes #"clojure.lang.Var$"))))
 
-(def rstring (memoize #(first (find-methods (rt) #"readString"))))
+(def rstring (memoize #(first (find-methods (rt) #"readString$"))))
 
-(def as (memoize #(first (find-methods (rt) #"assoc"))))
+(def as (memoize #(first (find-methods (rt) #"assoc$"))))
 
-(def cj (memoize #(first (find-methods (rt) #"conj"))))
+(def cj (memoize #(first (find-methods (rt) #"conj$"))))
 
-(def ev (memoize #(first (find-methods (co) #"eval"))))
+(def ev (memoize #(first (find-methods (co) #"eval$"))))
 
-(def ge (memoize #(first (find-methods (va) #"get"))))
+(def ge (memoize #(first (find-methods (va) #"get$"))))
 
-(def sroot (memoize #(first (find-methods (va) #"swapRoot"))))
+(def sroot (memoize #(first (find-methods (va) #"swapRoot$"))))
 
 (defn print-threads []
   (doseq [[n t] (keep-indexed vector (seq (list-threads)))]
