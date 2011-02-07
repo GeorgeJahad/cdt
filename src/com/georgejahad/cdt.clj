@@ -35,7 +35,8 @@
         com.sun.jdi.request.StepRequest
         com.sun.jdi.event.StepEvent
         com.sun.jdi.event.MethodEntryEvent
-        com.sun.jdi.event.LocatableEvent
+        com.sun.jdi.event.MethodEntryEvent
+        com.sun.jdi.event.ThreadStartEvent
         com.sun.jdi.IncompatibleThreadStateException
         com.sun.jdi.ObjectCollectedException)
 
@@ -213,6 +214,8 @@
 
 (defonce method-entry-handler (atom nil))
 
+(defonce thread-start-handler (atom nil))
+
 (defn set-handler [h f]
   (reset! h f))
 
@@ -229,6 +232,12 @@
 (defn default-breakpoint-handler [e]
   (println "\n\nBreakpoint" e "hit\n\n"))
 
+(def new-thread (atom nil))
+
+(defn default-thread-start-handler [e]
+  (reset! new-thread (.thread e))
+  (println "\n\nThread started" e "hit\n\n"))
+
 (defn handle-event [e]
   (Thread/yield)
   (condp #(instance? %1 %2) e
@@ -236,13 +245,15 @@
     ExceptionEvent (@exception-handler e)
     StepEvent  (@step-handler e)
     MethodEntryEvent  (@method-entry-handler e)
+    ThreadStartEvent  (@thread-start-handler e)
     :default (println "other event hit")))
 
 (defn setup-handlers []
   (set-handler exception-handler default-exception-handler)
   (set-handler breakpoint-handler default-breakpoint-handler)
   (set-handler step-handler default-step-handler)
-  (set-handler method-entry-handler default-method-entry-handler))
+  (set-handler method-entry-handler default-method-entry-handler)
+  (set-handler thread-start-handler default-thread-start-handler))
 
 (defn get-thread [#^LocatableEvent e]
   (.thread e))
@@ -387,6 +398,12 @@
     (merge-with
      (fn [a b] (delete-bp-fn sym) b)
      m1 m2)))
+
+(defn create-thread-start-break []
+  (doto (.createThreadStartRequest
+         (.eventRequestManager (vm)))
+    (.setSuspendPolicy EventRequest/SUSPEND_EVENT_THREAD)
+    (.setEnabled true)))
 
 (defn create-bp [l]
   (doto (.createBreakpointRequest
@@ -764,6 +781,22 @@
   ([thread]
      (doseq [[i f] (keep-indexed vector (.frames thread))]
        (print-frame i f))))
+
+(defn get-frame-string
+  ([] (get-frame-string (cf) (get-frame)))
+  ([i f]
+     (let [l (.location f)
+           ln (try (str (local-names i)) (catch Exception e "[]"))
+           fname (get-file-name f)
+           c (.name (.declaringType (.method l)))]
+       (format "%s %s %s %s:%d" c (.name (.method l))
+               ln fname (.lineNumber l)))))
+
+(defn get-frames
+  ([] (get-frames (ct)))
+  ([thread]
+     (for [[i f] (keep-indexed vector (.frames thread))]
+       (get-frame-string i f))))
 
 (defmacro with-breakpoints-disabled [& body]
   `(try
