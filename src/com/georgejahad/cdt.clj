@@ -550,7 +550,7 @@
 (defn set-catch [class type]
   (let [caught (boolean (#{:all :caught} type))
         uncaught (boolean (#{:all :uncaught} type))
-        pattern (re-pattern (second (.split (str class) " " )))
+        pattern (re-pattern (str (second (.split (str class) " " )) "$"))
         ref-type (first (find-classes pattern))
         catch-request
         (doto (.createExceptionRequest (.eventRequestManager (vm))
