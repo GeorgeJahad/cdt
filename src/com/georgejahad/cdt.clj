@@ -43,9 +43,10 @@
 (defonce CDT-DISPLAY-MSG (atom false))
 
 (defn cdt-display-msg [s]
-  (if @CDT-DISPLAY-MSG
-    (str "CDT Display Message: " s)
-    s))
+  (condp = @CDT-DISPLAY-MSG
+      true (str "CDT Display Message: " s),
+      false s,
+      (@CDT-DISPLAY-MSG s)))
 
 (defn regex-filter [regex seq]
   (filter #(re-find regex (.name %)) seq))
@@ -246,7 +247,7 @@
     StepEvent  (@step-handler e)
     MethodEntryEvent  (@method-entry-handler e)
     ThreadStartEvent  (@thread-start-handler e)
-    :default (println "other event hit")))
+    (println "other event hit")))
 
 (defn setup-handlers []
   (set-handler exception-handler default-exception-handler)
