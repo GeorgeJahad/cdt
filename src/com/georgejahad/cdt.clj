@@ -18,7 +18,7 @@
 
 (declare reval-ret* reval-ret-str reval-ret-obj
          disable-stepping show-data update-step-list print-frame
-         unmunge delete-bp-fn remote-create-str)
+         unmunge delete-bp-fn remote-create-str step-list)
 
 ;; add-classpath is ugly, but handles the fact that tools.jar and
 ;; sa-jdi.jar are platform dependencies that I can't easily put in a
@@ -79,6 +79,9 @@
   (reset! current-thread t)
   (update-step-list))
 
+(defn clear-current-thread []
+  (reset! current-thread nil))
+
 (defn set-current-thread-num [thread-num]
   (set-current-thread (nth (list-threads) thread-num)))
 
@@ -99,7 +102,7 @@
   (let [s (if (and (ct) (.isSuspended (ct)))
             " "
             " not ")]
-    (println (str (cdt-display-msg "Status of current thread is") s "suspended."))))
+    (println (cdt-display-msg (str "Status of current thread is " s " suspended.")))))
 
 (defonce source-path (atom ""))
 (defonce prefix-path (atom ""))
@@ -168,7 +171,7 @@
   `(try
      ~@body
      (catch Exception e#
-       (println (cdt-display-msg "Unexpected exception generated: ") e#)
+       (println (cdt-display-msg (str "Unexpected exception generated: " e#)))
        (throw e#))))
 
 (defmacro check-incompatible-state [& body]
@@ -272,8 +275,8 @@
   `(try
      ~@body
      (catch Exception e#
-       (println (cdt-display-msg "exception in event handler")
-                e# "You may need to restart CDT")
+       (println (cdt-display-msg (str "exception in event handler "
+                                      e# ". You may need to restart CDT")))
        (swap! event-handler-exceptions conj e#)
        (Thread/sleep 5000))))
 
@@ -328,6 +331,12 @@
        (.setValue (.get args "pid") pid)
        (reset! vm-data (.attach (conn) args))
        (start-event-handler))))
+
+(defn cdt-detach []
+  (.dispose (vm))
+  (reset! CDT-DISPLAY-MSG false)
+  (reset! step-list {})
+  (stop-event-handler))
 
 (defn find-classes [class-regex]
   (regex-filter class-regex (.allClasses (vm))))
@@ -441,7 +450,7 @@
   (let [bps (doall (map create-bp locations))]
     (if (seq bps)
       (do
-        (println (cdt-display-msg "bp set on") locations)
+        (println (cdt-display-msg (str "bp set on " (seq locations))))
         (swap! bp-list
                (merge-with-exception sym) {sym (BpSpec. locations bps)}))
       false)))
@@ -526,7 +535,7 @@
                          (.allClasses (vm)))
          locations (mapcat (partial get-locations line) classes)]
      (when-not (set-bp-locations sym locations)
-       (println (cdt-display-msg "No breakpoints found at line:") line)))))
+       (println (cdt-display-msg (str "No breakpoints found at line: " line)))))))
 
 (defn delete-bp-fn [sym]
   (doseq [bp (:bps (@bp-list sym))]
