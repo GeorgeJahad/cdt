@@ -247,9 +247,9 @@
   (condp #(instance? %1 %2) e
     BreakpointEvent (@breakpoint-handler e)
     ExceptionEvent (@exception-handler e)
-    StepEvent  (@step-handler e)
-    MethodEntryEvent  (@method-entry-handler e)
-    ThreadStartEvent  (@thread-start-handler e)
+    StepEvent (@step-handler e)
+    MethodEntryEvent (@method-entry-handler e)
+    ThreadStartEvent (@thread-start-handler e)
     (println "other event hit")))
 
 (defn setup-handlers []
@@ -815,25 +815,27 @@
      (finally
       (enable-all-breakpoints true))))
 
-(defn safe-reval [form locals?]
+(defn safe-reval [form locals? convert-fn]
   (check-unexpected-exception
    (with-breakpoints-disabled
      (let [s (reval-ret-str form locals?)]
        (try
-         (read-string (fixup-string-reference-impl s))
+         (convert-fn (fixup-string-reference-impl s))
          (catch Exception e (println-str (str s))))))))
 
 (defmacro reval
   ([form]
      `(reval ~form true))
   ([form locals?]
-     `(safe-reval '~form true)))
+     `(safe-reval '~form true read-string)))
 
 (defn string-nil [x]
   (if (nil? x) "nil" x))
 
 (defn reval-display [form]
-  (println (cdt-display-msg (string-nil (safe-reval form true)))))
+  (-> form
+      (safe-reval true read-string)
+      string-nil cdt-display-msg println))
 
 (defn gen-class-regex [c]
   (re-pattern (str (.getName c) "$")))
