@@ -22,7 +22,7 @@
   (fn [e] (.countDown latch)))
 
 (defn reval-test [form]
-  (safe-reval form true))
+  (safe-reval (ct) (cf) form true read-string))
 
 (def test-frame-str-fmt
      "  0 com.georgejahad.cdt_test$test_func invoke %s cdt_test.clj:%d\n")
@@ -50,26 +50,27 @@
       (send-off a (fn [_] (test-func 3 "test" #(.countDown finish-latch))))
       (is (.await event-latch 2 TimeUnit/SECONDS)))
     (testing "reval is able to determine proper values"
+      (Thread/sleep 100)
       (is (= [3 "test"] (reval-test '[a b])))
       (is (= "\"#<Namespace com.georgejahad.cdt-test>\"\n" (reval-test '*ns*))))
     (testing "print-frame shows the frame"
-      (is (= (with-out-str (print-frame)) test-frame-str)))
+      (is (= (with-out-str (print-frame (ct) (cf))) test-frame-str)))
     (testing "step goes to next line"
       (set-handler step-handler (handler step-latch))
-      (step-over)
+      (step-over (ct))
       (Thread/sleep 100)
-      (is (= (with-out-str (print-frame)) step-frame-str)))
+      (is (= (with-out-str (print-frame (ct) (cf))) step-frame-str)))
     ;;test failing because :file doesn't contain complete path
 #_    (testing "line-bp causes breakpoint event"
       (let [file (:file (meta #'test-func))
             line (+ 2 (:line (meta #'test-func)))]
         (line-bp file line))
-      (cont)
+      (continue-vm)
       (Thread/sleep 100)
       (is (= 7 (reval-test 'd))))
-    (is (= (with-out-str (print-frame)) line-bp-frame-str))
+    (is (= (with-out-str (print-frame (ct) (cf))) line-bp-frame-str))
     (testing "cont allows function to finish"
-      (cont)
+      (continue-vm)
       (is (.await finish-latch 2 TimeUnit/SECONDS)))
     (testing "delete-bp causes the function not to stop"
       (delete-bp com.georgejahad.cdt-test/test-func)
