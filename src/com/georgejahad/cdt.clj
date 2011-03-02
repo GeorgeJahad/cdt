@@ -680,7 +680,7 @@
                   (fix-values (.getValues obj fields)))
            this-map)))))
 
-(defn convert-type [type val]
+(defn convert-type [type threadx framex val]
   (reval-ret-obj (list 'new type (str val)) false))
 
 (defn gen-conversion [t]
@@ -695,13 +695,14 @@
      (gen-conversion-map
       [Boolean Integer Byte Char Double Float Integer Long Short]))
 
-(defn convert-primitives [p]
+(defn convert-primitives [threadx framex p]
   (if-let [f (conversion-map (type p))]
-    (f p)
-    p))
+    (do (println "gbj testing pconv")
+      (f threadx framex p))
+    (do (println "gbj not testing pconf") p)))
 
-(defn add-local-to-map [threadx m l]
-  (let [val (convert-primitives (val l))]
+(defn add-local-to-map [threadx framex m l]
+  (let [val (convert-primitives threadx framex (val l))]
     (remote-assoc
      (make-arg-list m
                     (remote-create-str (key l)) val) threadx)))
@@ -724,7 +725,7 @@
   (let [locals-and-closures (gen-locals-and-closures threadx framex)
         sym (get-cdt-sym threadx framex)
         v (reval-ret-obj threadx framex `(intern '~'user '~sym {}) false)
-        new-map (reduce (partial add-local-to-map threadx)
+        new-map (reduce (partial add-local-to-map threadx framex)
                         (remote-get threadx v) locals-and-closures)]
     (remote-swap-root threadx v (make-arg-list new-map))
     locals-and-closures))
