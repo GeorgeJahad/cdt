@@ -266,6 +266,9 @@
 (defn get-thread [#^LocatableEvent e]
   (.thread e))
 
+(defn get-thread-from-id [id]
+  (first (filter #(= id (.uniqueID %)) (list-threads))))
+
 (defn finish-set [s]
   (let [e (first (iterator-seq (.eventIterator s)))]
     (set-current-frame 0)
@@ -396,9 +399,8 @@
                                  StepRequest/STEP_LINE StepRequest/STEP_OUT)})))
 
 (defn do-step [threadx type]
-  (fn []
-    (.setEnabled ((@step-list threadx) type) true)
-    (continue-thread threadx)))
+  (.setEnabled ((@step-list threadx) type) true)
+  (continue-thread threadx))
 
 (defn stepi [threadx]
   (do-step threadx :stepi))
