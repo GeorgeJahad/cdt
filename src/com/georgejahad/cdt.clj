@@ -70,17 +70,17 @@
 (defn continue-vm []
   (.resume (vm)))
 
-(defn continue-thread [threadx]
-  (.resume threadx))
+(defn continue-thread [thread]
+  (.resume thread))
 
 (defn list-threads []
   (.allThreads (vm)))
 
 (defonce current-thread (atom nil))
 
-(defn set-current-thread [threadx]
-  (reset! current-thread threadx)
-  (update-step-list threadx))
+(defn set-current-thread [thread]
+  (reset! current-thread thread)
+  (update-step-list thread))
 
 (defn clear-current-thread []
   (println "gbj clearing")
@@ -95,15 +95,15 @@
 
 (defonce current-frame (atom 0))
 
-(defn set-current-frame [framex]
-  (reset! current-frame framex))
+(defn set-current-frame [frame-num]
+  (reset! current-frame frame-num))
 
 (def scf set-current-frame)
 
 (defn cf [] @current-frame)
 
-(defn status-report [threadx]
-  (let [s (if (and threadx (.isSuspended threadx))
+(defn status-report [thread]
+  (let [s (if (and thread (.isSuspended thread))
             " "
             " not ")]
     (println (cdt-display-msg (str "Status of current thread is " s " suspended.")))))
@@ -122,8 +122,8 @@
 (defn set-prefix-path [path]
   (reset! prefix-path (remove-trailing-slashes path)))
 
-(defn get-frame [threadx framex]
-  (.frame threadx framex))
+(defn get-frame [thread frame-num]
+  (.frame thread frame-num))
 
 (defn gen-paths []
   (remove #{""}
@@ -133,8 +133,8 @@
                 (.classPath (vm))
                 (.split @source-path File/pathSeparator)))))
 
-(defn get-source-path [threadx framex]
-  (.sourcePath (.location (get-frame threadx framex))))
+(defn get-source-path [thread frame-num]
+  (.sourcePath (.location (get-frame thread frame-num))))
 
 (defn get-jar-entries [path]
   (map str (enumeration-seq (.entries (java.util.jar.JarFile. path)))))
@@ -162,8 +162,8 @@
     (get-jar-source fname path)
     (get-file-source fname path)))
 
-(defn get-source [threadx framex]
-  (let [file (get-source-path threadx framex)]
+(defn get-source [thread frame-num]
+  (let [file (get-source-path thread frame-num)]
     (if (= (first file) File/separatorChar)
       {:name file}
       (->> (gen-paths)
@@ -187,31 +187,31 @@
 
 (defn source-not-found [] (cdt-display-msg "Source not found; check @source-path"))
 
-(defn print-current-location [threadx framex]
+(defn print-current-location [thread frame-num]
   (try
     (check-incompatible-state
-     (let [line (.lineNumber (.location (get-frame threadx framex)))]
-       (if-let [{:keys [name jar]} (get-source threadx framex)]
-         (let [s (format "%s:%d:%d:" name line framex)
+     (let [line (.lineNumber (.location (get-frame thread frame-num)))]
+       (if-let [{:keys [name jar]} (get-source thread frame-num)]
+         (let [s (format "%s:%d:%d:" name line frame-num)
                s (if jar (str s jar) s)]
            (println "CDT location is" s)
-           (print-frame threadx framex))
+           (print-frame thread frame-num))
          (println (source-not-found)))))
     (catch Exception _ (println (source-not-found)))))
 
-(defn up [threadx framex]
-  (let [max (dec (count (.frames threadx)))]
-    (if (< framex max)
+(defn up [thread frame-num]
+  (let [max (dec (count (.frames thread)))]
+    (if (< frame-num max)
       (do
-        (scf (inc framex))
-        (print-current-location threadx framex))
+        (scf (inc frame-num))
+        (print-current-location thread frame-num))
       (println (cdt-display-msg "already at top of stack")))))
 
-(defn down [threadx framex]
-  (if (> framex 0)
+(defn down [thread frame-num]
+  (if (> frame-num 0)
     (do
-      (scf (dec framex))
-      (print-current-location threadx framex))
+      (scf (dec frame-num))
+      (print-current-location thread frame-num))
     (println (cdt-display-msg "already at bottom of stack"))))
 
 (defonce exception-handler (atom nil))
@@ -378,41 +378,41 @@
 
 (defonce step-list (atom {}))
 
-(defn create-step [threadx width depth]
+(defn create-step [thread width depth]
   (doto (.createStepRequest
-         (.eventRequestManager (vm)) threadx
+         (.eventRequestManager (vm)) thread
          width depth)
     (.setSuspendPolicy EventRequest/SUSPEND_EVENT_THREAD)
     (.setEnabled false)))
 
-(defn update-step-list [threadx]
-  (if-not (@step-list threadx)
+(defn update-step-list [thread]
+  (if-not (@step-list thread)
     (swap! step-list assoc
-           threadx
-           {:stepi (create-step threadx
+           thread
+           {:stepi (create-step thread
                                 StepRequest/STEP_MIN StepRequest/STEP_INTO)
-            :into  (create-step threadx
+            :into  (create-step thread
                                 StepRequest/STEP_LINE StepRequest/STEP_INTO)
-            :over  (create-step threadx
+            :over  (create-step thread
                                 StepRequest/STEP_LINE StepRequest/STEP_OVER)
-            :finish (create-step threadx 
+            :finish (create-step thread 
                                  StepRequest/STEP_LINE StepRequest/STEP_OUT)})))
 
-(defn do-step [threadx type]
-  (.setEnabled ((@step-list threadx) type) true)
-  (continue-thread threadx))
+(defn do-step [thread type]
+  (.setEnabled ((@step-list thread) type) true)
+  (continue-thread thread))
 
-(defn stepi [threadx]
-  (do-step threadx :stepi))
+(defn stepi [thread]
+  (do-step thread :stepi))
 
-(defn step [threadx]
-  (do-step threadx :into))
+(defn step [thread]
+  (do-step thread :into))
 
-(defn step-over [threadx]
-  (do-step threadx :over))
+(defn step-over [thread]
+  (do-step thread :over))
 
-(defn finish [threadx]
-  (do-step threadx :finish))
+(defn finish [thread]
+  (do-step thread :finish))
 
 (defn disable-stepping []
   (doseq [t (vals @step-list) s (vals t)]
@@ -525,13 +525,13 @@
       (println fname (source-not-found))
       (throw (Exception. (str fname " " (source-not-found)))))))
 
-(defn current-type [threadx framex]
-  (-> (get-frame threadx framex)
+(defn current-type [thread frame-num]
+  (-> (get-frame thread frame-num)
       .location
       .declaringType))
 
-(defn get-ns [threadx framex]
-  (-> (current-type threadx framex)
+(defn get-ns [thread frame-num]
+  (-> (current-type thread frame-num)
       .name
       (.split  "\\$")
       first
@@ -615,8 +615,8 @@
 ;;  self-targeting.
 (def invoke-options (atom ClassType/INVOKE_SINGLE_THREADED))
 
-(defn remote-invoke [class-fn method-fn arglist threadx]
-  (.invokeMethod (class-fn) threadx (method-fn) arglist @invoke-options))
+(defn remote-invoke [class-fn method-fn arglist thread]
+  (.invokeMethod (class-fn) thread (method-fn) arglist @invoke-options))
 
 (def remote-eval (partial remote-invoke co ev))
 
@@ -624,30 +624,30 @@
 
 (def remote-assoc (partial remote-invoke rt as))
 
-(defn remote-get [threadx v]
-  (remote-invoke (constantly v) ge (make-arg-list) threadx))
+(defn remote-get [thread v]
+  (remote-invoke (constantly v) ge (make-arg-list) thread))
 
-(defn remote-swap-root [threadx v arg-list]
-  (remote-invoke (constantly v) sroot arg-list threadx))
+(defn remote-swap-root [thread v arg-list]
+  (remote-invoke (constantly v) sroot arg-list thread))
 
 (def remote-conj (partial remote-invoke rt cj))
 
-(defn get-file-name [framey]
-  (let [sp (try (.sourcePath (.location framey))
+(defn get-file-name [frame]
+  (let [sp (try (.sourcePath (.location frame))
                 (catch Exception e "source not found"))]
     (last  (.split sp File/separator))))
 
-(defn get-source-name [threadx framex]
-  (try (-> (get-frame threadx framex)
+(defn get-source-name [thread frame-num]
+  (try (-> (get-frame thread frame-num)
            .location
            .sourceName) (catch Exception e nil)))
 
-(defn clojure-frame? [threadx framex]
-  (if-let [name (get-source-name threadx framex)]
+(defn clojure-frame? [thread frame-num]
+  (if-let [name (get-source-name thread frame-num)]
     (.endsWith name ".clj")
     (do
       (println "source name unavailable")
-      (-> (get-frame threadx framex) .location .method .name (.endsWith "nvoke")))))
+      (-> (get-frame thread frame-num) .location .method .name (.endsWith "nvoke")))))
 
 (def default-regex
      #"(^const__\d*$|^__meta$|^__var__callsite__\d*$|^__site__\d*__$|^__thunk__\d*__$)")
@@ -656,13 +656,13 @@
   (seq (remove #(re-find default-regex (.name %)) fields)))
 
 (defn gen-closure-field-list
-  ([threadx framex]
-     (let [framey (.frame threadx framex)]
-       (when-let [obj (.thisObject framey)]
+  ([thread frame-num]
+     (let [frame (.frame thread frame-num)]
+       (when-let [obj (.thisObject frame)]
          (let [fields (.fields (.referenceType obj))]
-           (if (clojure-frame? threadx framex)
+           (if (clojure-frame? thread frame-num)
              (remove-default-fields fields)
-             fields #_(.allFields (.declaringType (.location framey)))))))))
+             fields #_(.allFields (.declaringType (.location frame)))))))))
 
 (def unmunge-seq
      (reverse (sort-by second compare clojure.lang.Compiler/CHAR_MAP)))
@@ -674,15 +674,15 @@
   (into {} (for [[k v] values] [(unmunge (.name k)) v])))
 
 (defn gen-closure-map
-  ([threadx framex]
-     (when-let [obj (.thisObject (.frame threadx framex))]
+  ([thread frame-num]
+     (when-let [obj (.thisObject (.frame thread frame-num))]
        (let [this-map {"this" obj}]
-         (if-let [fields (gen-closure-field-list threadx framex)]
+         (if-let [fields (gen-closure-field-list thread frame-num)]
            (merge this-map
                   (fix-values (.getValues obj fields)))
            this-map)))))
 
-(defn convert-type [type threadx framex val]
+(defn convert-type [type thread frame-num val]
   (reval-ret-obj (list 'new type (str val)) false))
 
 (defn gen-conversion [t]
@@ -697,39 +697,39 @@
      (gen-conversion-map
       [Boolean Integer Byte Char Double Float Integer Long Short]))
 
-(defn convert-primitives [threadx framex p]
+(defn convert-primitives [thread frame-num p]
   (if-let [f (conversion-map (type p))]
     (do (println "gbj testing pconv")
-      (f threadx framex p))
+      (f thread frame-num p))
     (do (println "gbj not testing pconf") p)))
 
-(defn add-local-to-map [threadx framex m l]
-  (let [val (convert-primitives threadx framex (val l))]
+(defn add-local-to-map [thread frame-num m l]
+  (let [val (convert-primitives thread frame-num (val l))]
     (remote-assoc
      (make-arg-list m
-                    (remote-create-str (key l)) val) threadx)))
+                    (remote-create-str (key l)) val) thread)))
 
 (def cdt-sym (atom nil))
 
-(defn get-cdt-sym [threadx framex]
+(defn get-cdt-sym [thread frame-num]
   (or @cdt-sym
       (reset! cdt-sym
               (symbol (read-string
-                       (str (reval-ret-str threadx framex `(gensym "cdt-") false)))))))
+                       (str (reval-ret-str thread frame-num `(gensym "cdt-") false)))))))
 
 (defn gen-locals-and-closures
-  ([threadx framex]
-     (let [framey (.frame threadx framex)
-           locals #_(fix-values (.getValues framey (-> framey .location .method .variables))) (fix-values (.getValues framey (.visibleVariables framey)))]
-       (merge locals (gen-closure-map threadx framex)))))
+  ([thread frame-num]
+     (let [frame (.frame thread frame-num)
+           locals #_(fix-values (.getValues frame (-> frame .location .method .variables))) (fix-values (.getValues frame (.visibleVariables frame)))]
+       (merge locals (gen-closure-map thread frame-num)))))
 
-(defn add-locals-to-map [threadx framex]
-  (let [locals-and-closures (gen-locals-and-closures threadx framex)
-        sym (get-cdt-sym threadx framex)
-        v (reval-ret-obj threadx framex `(intern '~'user '~sym {}) false)
-        new-map (reduce (partial add-local-to-map threadx framex)
-                        (remote-get threadx v) locals-and-closures)]
-    (remote-swap-root threadx v (make-arg-list new-map))
+(defn add-locals-to-map [thread frame-num]
+  (let [locals-and-closures (gen-locals-and-closures thread frame-num)
+        sym (get-cdt-sym thread frame-num)
+        v (reval-ret-obj thread frame-num `(intern '~'user '~sym {}) false)
+        new-map (reduce (partial add-local-to-map thread frame-num)
+                        (remote-get thread v) locals-and-closures)]
+    (remote-swap-root thread v (make-arg-list new-map))
     locals-and-closures))
 
 (defn gen-local-bindings [sym locals]
@@ -740,94 +740,94 @@
                   ((var-get (ns-resolve '~'user '~sym)) ~local-name)]))
             locals)))
 
-(defn gen-form-with-locals [threadx framex form]
-  (let [locals (add-locals-to-map threadx framex)]
-    `(let ~(gen-local-bindings (get-cdt-sym threadx framex) locals) ~form)))
+(defn gen-form-with-locals [thread frame-num form]
+  (let [locals (add-locals-to-map thread frame-num)]
+    `(let ~(gen-local-bindings (get-cdt-sym thread frame-num) locals) ~form)))
 
-(defn setup-namespace [threadx framex form]
-  (if-not (clojure-frame? threadx framex)
+(defn setup-namespace [thread frame-num form]
+  (if-not (clojure-frame? thread frame-num)
     form
-    `(binding [*ns* (find-ns '~(get-ns threadx framex))]
+    `(binding [*ns* (find-ns '~(get-ns thread frame-num))]
        ~form)))
 
-(defn gen-form [threadx framex form return-str?]
+(defn gen-form [thread frame-num form return-str?]
   (let [form (if return-str?
                `(with-out-str (pr (eval '~form)))
                `(eval '~form))]
-    (setup-namespace threadx framex
+    (setup-namespace thread frame-num
      `(try ~form
            (catch Throwable t#
              (with-out-str (pr (str "remote exception: " t#))))))))
 
-(defn gen-remote-form-and-eval [threadx form]
+(defn gen-remote-form-and-eval [thread form]
   (-> (remote-create-str form)
       make-arg-list
-      (remote-read-string threadx)
+      (remote-read-string thread)
       make-arg-list
-      (remote-eval threadx)))
+      (remote-eval thread)))
 
 (defn reval-ret*
-  [threadx framex return-str? form locals?]
+  [thread frame-num return-str? form locals?]
   (check-incompatible-state
-   (let [form (if-not locals? form (gen-form-with-locals threadx framex form))]
-     (gen-remote-form-and-eval threadx (gen-form threadx framex form return-str?)))))
+   (let [form (if-not locals? form (gen-form-with-locals thread frame-num form))]
+     (gen-remote-form-and-eval thread (gen-form thread frame-num form return-str?)))))
 
 (defn reval-ret-str
-  [threadx framex form locals?]
-  (reval-ret* threadx framex true form locals?))
+  [thread frame-num form locals?]
+  (reval-ret* thread frame-num true form locals?))
 
 (defn reval-ret-obj
-  [threadx framex form locals?]
-  (reval-ret* threadx framex false form locals?))
+  [thread frame-num form locals?]
+  (reval-ret* thread frame-num false form locals?))
 
 (defn fixup-string-reference-impl [sri]
   ;; remove the extra quotes caused by the stringReferenceImpl
   (apply str (butlast (drop 1 (seq (str sri))))))
 
 (defn local-names
-  ([threadx framex]
-     (->> (gen-locals-and-closures threadx framex)
+  ([thread frame-num]
+     (->> (gen-locals-and-closures thread frame-num)
           keys
           (map symbol)
           sort
           (into []))))
 
-(defn locals [threadx framex]
+(defn locals [thread frame-num]
   (dorun (map #(println %1 %2)
-              (local-names threadx framex)
+              (local-names thread frame-num)
               (read-string (fixup-string-reference-impl
-                            (reval-ret-str threadx framex
-                                           (local-names threadx framex) true))))))
+                            (reval-ret-str thread frame-num
+                                           (local-names thread frame-num) true))))))
 
 (defn print-frame
-  ([threadx framex]
-     (let [f (get-frame threadx framex)
+  ([thread frame-num]
+     (let [f (get-frame thread frame-num)
            l (.location f)
-           ln (try (str (local-names threadx framex)) (catch Exception e "[]"))
+           ln (try (str (local-names thread frame-num)) (catch Exception e "[]"))
            fname (get-file-name f)
            c (.name (.declaringType (.method l)))]
-       (printf "%3d %s %s %s %s:%d\n" framex c (.name (.method l))
+       (printf "%3d %s %s %s %s:%d\n" frame-num c (.name (.method l))
                ln fname (.lineNumber l)))))
 
 (defn print-frames
-  ([threadx]
-     (doseq [framex (range (count (.frames threadx)))]
-       (print-frame threadx framex))))
+  ([thread]
+     (doseq [frame-num (range (count (.frames thread)))]
+       (print-frame thread frame-num))))
 
 (defn get-frame-string
-  ([threadx framex]
-     (let [f (get-frame threadx framex)
+  ([thread frame-num]
+     (let [f (get-frame thread frame-num)
            l (.location f)
-           ln (try (str (local-names threadx framex)) (catch Exception e "[]"))
+           ln (try (str (local-names thread frame-num)) (catch Exception e "[]"))
            fname (get-file-name f)
            c (.name (.declaringType (.method l)))]
        (format "%s %s %s %s:%d" c (.name (.method l))
                ln fname (.lineNumber l)))))
 
 (defn get-frames
-  ([threadx]
-     (for [framex (range (count (.frames threadx)))]
-       (get-frame-string threadx framex))))
+  ([thread]
+     (for [frame-num (range (count (.frames thread)))]
+       (get-frame-string thread frame-num))))
 
 (defmacro with-breakpoints-disabled [& body]
   `(try
@@ -836,48 +836,48 @@
      (finally
       (enable-all-breakpoints true))))
 
-(defn safe-reval [threadx framex form locals? convert-fn]
+(defn safe-reval [thread frame-num form locals? convert-fn]
   (check-unexpected-exception
    (with-breakpoints-disabled
-     (let [s (reval-ret-str threadx framex form locals?)]
+     (let [s (reval-ret-str thread frame-num form locals?)]
        (try
          (convert-fn (fixup-string-reference-impl s))
          (catch Exception e (println-str (str s))))))))
 
 (defmacro reval
-  ([threadx framex form]
-     `(reval ~threadx ~framex ~form true))
-  ([threadx framex form locals?]
-     `(safe-reval ~threadx ~framex '~form true read-string)))
+  ([thread frame-num form]
+     `(reval ~thread ~frame-num ~form true))
+  ([thread frame-num form locals?]
+     `(safe-reval ~thread ~frame-num '~form true read-string)))
 
 (defn string-nil [x]
   (if (nil? x) "nil" x))
 
-(defn reval-display [threadx framex form]
+(defn reval-display [thread frame-num form]
   (-> form
-      (safe-reval threadx framex true read-string)
+      (safe-reval thread frame-num true read-string)
       string-nil cdt-display-msg println))
 
 (defn gen-class-regex [c]
   (re-pattern (str (.getName c) "$")))
 
-(defn add-obj-to-vec [threadx v obj]
+(defn add-obj-to-vec [thread v obj]
   (remote-conj
-   (make-arg-list v obj) threadx))
+   (make-arg-list v obj) thread))
 
 (defn get-instances [classes]
   (let [regexes (map gen-class-regex classes)]
     (mapcat #(.instances % 0) (mapcat find-classes regexes))))
 
-(defn create-var-from-objs [threadx framex ns sym coll-form add-fn objs]
-  (let [v (reval-ret-obj threadx framex `(intern  '~ns '~sym ~coll-form) false)
-        new-vec (reduce add-fn (remote-get threadx v) objs)]
-    (remote-swap-root threadx v (make-arg-list new-vec))
+(defn create-var-from-objs [thread frame-num ns sym coll-form add-fn objs]
+  (let [v (reval-ret-obj thread frame-num `(intern  '~ns '~sym ~coll-form) false)
+        new-vec (reduce add-fn (remote-get thread v) objs)]
+    (remote-swap-root thread v (make-arg-list new-vec))
     v))
 
-(defn create-instance-seq [threadx framex ns sym & classes]
+(defn create-instance-seq [thread frame-num ns sym & classes]
   (let [instances (get-instances classes)]
-    (create-var-from-objs threadx framex ns sym '[] add-obj-to-vec instances)))
+    (create-var-from-objs thread frame-num ns sym '[] add-obj-to-vec instances)))
 
 (defn is-contained? [ls container]
   #_(if (= (type container) clojure.lang.LazySeq)
@@ -891,10 +891,10 @@
 (defn get-heads [s]
   (remove nil? (map (partial is-head s) s)))
 
-(defn create-head-seq [threadx framex ns sym]
+(defn create-head-seq [thread frame-num ns sym]
   (let [s (get-instances [clojure.lang.LazySeq])
         h (get-heads s)]
-    (create-var-from-objs threadx framex ns sym '[] add-obj-to-vec h)))
+    (create-var-from-objs thread frame-num ns sym '[] add-obj-to-vec h)))
 
 (start-handling-break)
 (add-break-thread!)
