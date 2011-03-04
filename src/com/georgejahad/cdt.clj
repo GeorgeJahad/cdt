@@ -599,9 +599,9 @@
   [sym]
   `(delete-bp-fn '~sym))
 
-(defn enable-all-breakpoints [type]
-  (doseq [bps @bp-list bp (:bps (val bps))]
-    (.setEnabled bp type)))
+(defn enable-all-breakpoints [thread type]
+  (doseq [bps @bp-list bp (:thread-specific (val bps))]
+    (.setEnabled (get bp thread) type)))
 
 (defn delete-all-breakpoints []
   (doseq [bps @bp-list]
@@ -865,16 +865,16 @@
      (for [frame-num (range (count (.frames thread)))]
        (get-frame-string thread frame-num))))
 
-(defmacro with-breakpoints-disabled [& body]
+(defmacro with-breakpoints-disabled [thread & body]
   `(try
-     (enable-all-breakpoints false)
+     (enable-all-breakpoints ~thread false)
      ~@body
      (finally
-      (enable-all-breakpoints true))))
+      (enable-all-breakpoints ~thread true))))
 
 (defn safe-reval [thread frame-num form locals? convert-fn]
   (check-unexpected-exception
-   (with-breakpoints-disabled
+   (with-breakpoints-disabled thread
      (let [s (reval-ret-str thread frame-num form locals?)]
        (try
          (convert-fn (fixup-string-reference-impl s))
