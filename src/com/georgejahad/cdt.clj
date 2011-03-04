@@ -10,6 +10,8 @@
   (:require [clojure.string :as str])
   (:use [clojure.contrib.repl-utils :only
          [start-handling-break add-break-thread!]]
+        ;; needed because of http://www.assembla.com/spaces/clojure/tickets/259
+        [clojure.contrib.reflect :only [call-method]]
         [alex-and-georges.debug-repl])
   (:import java.util.ArrayList
            clojure.lang.Compiler
@@ -23,9 +25,9 @@
 ;; add-classpath is ugly, but handles the fact that tools.jar and
 ;; sa-jdi.jar are platform dependencies that I can't easily put in a
 ;; repo:
-#_(with-out-str (add-classpath (format "file:///%s/../lib/tools.jar"
+(with-out-str (add-classpath (format "file:///%s/../lib/tools.jar"
                                      (System/getProperty "java.home"))))
-#_(with-out-str (add-classpath (format "file:///%s/../lib/sa-jdi.jar"
+(with-out-str (add-classpath (format "file:///%s/../lib/sa-jdi.jar"
                                      (System/getProperty "java.home"))))
 (import com.sun.jdi.Bootstrap
         com.sun.jdi.ClassType
@@ -202,16 +204,16 @@
 (defn up [thread frame-num]
   (let [max (dec (count (.frames thread)))]
     (if (< frame-num max)
-      (do
-        (scf (inc frame-num))
-        (print-current-location thread frame-num))
+      (let [new-frame-num (inc frame-num)]
+        (scf new-frame-num)
+        (print-current-location thread new-frame-num))
       (println (cdt-display-msg "already at top of stack")))))
 
 (defn down [thread frame-num]
   (if (> frame-num 0)
-    (do
-      (scf (dec frame-num))
-      (print-current-location thread frame-num))
+    (let [new-frame-num (dec frame-num)]
+      (scf new-frame-num)
+      (print-current-location thread new-frame-num))
     (println (cdt-display-msg "already at bottom of stack"))))
 
 (defonce exception-handler (atom nil))
@@ -683,7 +685,7 @@
            this-map)))))
 
 (defn convert-type [type thread frame-num val]
-  (reval-ret-obj (list 'new type (str val)) false))
+  (reval-ret-obj thread frame-num (list 'new type (str val)) false))
 
 (defn gen-conversion [t]
   (let [c (Class/forName (str "com.sun.tools.jdi." t "ValueImpl"))
@@ -854,8 +856,7 @@
   (if (nil? x) "nil" x))
 
 (defn reval-display [thread frame-num form]
-  (-> form
-      (safe-reval thread frame-num true read-string)
+  (-> (safe-reval thread frame-num form true read-string)
       string-nil cdt-display-msg println))
 
 (defn gen-class-regex [c]

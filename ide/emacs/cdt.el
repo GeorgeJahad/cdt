@@ -19,11 +19,11 @@
 
 (defun cdt-here ()
   (interactive)
-  (gud-call "(print-current-location)"))
+  (gud-call "(print-current-location (ct) (cf))"))
 
 (defun cdt-print ()
   (interactive)
-  (gud-call (format "(reval-display '%s)" (thing-at-point 'sexp))))
+  (gud-call (format "(reval-display (ct) (cf) '%s)" (thing-at-point 'sexp))))
 
 (defun strip-trail (path)
   (if (= (elt path (- (length path) 1)) ?/)
@@ -43,15 +43,15 @@
   (set (make-local-variable 'gud-minor-mode) 'jdb)
 
   (gud-def gud-break  "(line-bp \"%d%f\" %l)"  "\C-b" "breakpoint on current line")
-  (gud-def gud-stepi  "(stepi)"         "\C-i" "Step the smallest possible increment.")
-  (gud-def gud-step   "(step)"          "\C-s" "Step one source line with display.")
-  (gud-def gud-next   "(step-over)"     "\C-n" "Step one line (skip functions).")
-  (gud-def gud-cont   "(cont)"          "\C-g" "Go")
-  (gud-def gud-finish "(finish)"        "\C-f" "Go until current method returns.")
-  (gud-def gud-up2    "(up)"            "\C-u" "Up one stack frame.")
-  (gud-def gud-down2  "(down)"          "\C-d" "Down one stack frame.")
-  (gud-def gud-status  "(status-report)"  "s" "Status report")
-  (gud-def gud-this   "(reval-display 'this)"   "\C-t" "print this pointer")
+  (gud-def gud-stepi  "(stepi (ct))"         "\C-i" "Step the smallest possible increment.")
+  (gud-def gud-step   "(step (ct))"          "\C-s" "Step one source line with display.")
+  (gud-def gud-next   "(step-over (ct))"     "\C-n" "Step one line (skip functions).")
+  (gud-def gud-cont   "(continue-vm)"          "\C-g" "Go")
+  (gud-def gud-finish "(finish (ct))"        "\C-f" "Go until current method returns.")
+  (gud-def gud-up2    "(up (ct) (cf))"            "\C-u" "Up one stack frame.")
+  (gud-def gud-down2  "(down (ct) (cf))"          "\C-d" "Down one stack frame.")
+  (gud-def gud-status  "(status-report (ct))"  "s" "Status report")
+  (gud-def gud-this   "(reval-display (ct) (cf) 'this)"   "\C-t" "print this pointer")
 
   (global-set-key (vconcat gud-key-prefix "\C-h") 'cdt-here)
   (global-set-key (vconcat gud-key-prefix "\C-r") 'cdt-repl)
