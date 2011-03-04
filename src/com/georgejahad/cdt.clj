@@ -69,6 +69,10 @@
 
 (defn vm [] @vm-data)
 
+(defn main-thread-groups []
+  (let [top (.topLevelThreadGroups (vm))]
+    (concat top (mapcat #(.threadGroups %) top))))
+
 (defn continue-vm []
   (.resume (vm)))
 
@@ -308,7 +312,7 @@
 
 (defn start-event-handler []
   (setup-handlers)
-  (reset! event-handler (Thread. handle-events))
+  (reset! event-handler (Thread. handle-events "CDT Event Handler"))
   (reset! event-handler-done false)
   (.start @event-handler))
 
@@ -437,8 +441,7 @@
 (defn create-bp [l]
   (doto (.createBreakpointRequest
          (.eventRequestManager (vm)) l)
-    (.setSuspendPolicy EventRequest/SUSPEND_EVENT_THREAD)
-    (.setEnabled true)))
+    (.setSuspendPolicy EventRequest/SUSPEND_EVENT_THREAD)))
 
 (defn munge-sym [sym]
   (let [[ns sym] (.split (str sym) "/")]
@@ -464,19 +467,50 @@
               (str "Namespace "
                    ns " not loaded; bp can not be set until it is."))))))
 
-(defn set-bp-locations [sym locations]
+(defn set-thread-filter [bp thread]
+  (call-method com.sun.tools.jdi.EventRequestManagerImpl$ThreadVisibleEventRequestImpl
+               'addThreadFilter [com.sun.jdi.ThreadReference] bp thread))
+
+(defn valid-thread? [thread groups-to-skip]
+  (not-any? #(= % (.threadGroup thread)) groups-to-skip))
+
+(defn create-thread-bps [locations thread-list groups-to-skip]
+  (into {} (for [t thread-list :when (valid-thread? t groups-to-skip)]
+             (let [bps (map create-bp locations)]
+               (when (seq bps)
+                 (doseq [bp bps]
+                   (set-thread-filter t bp)
+                   (.setEnabled bp true))
+                 [t bps])))))
+
+(defmulti create-bps (fn [locations thread-args] (count thread-args)))
+(defmethod create-bps 0 [locations thread-args]
+           (let [bps (map create-bp locations)]
+             (when (seq bps)
+               (doseq [bp bps]
+                 (.setEnabled bp true))
+               {:all bps})))
+
+(defmethod create-bps 3 [locations thread-args]
+           (let [[thread-list groups-to-skip add-new-threads?]
+                 thread-args]
+             (let [bps (create-thread-bps locations
+                                          thread-list groups-to-skip)]
+               (when (seq bps)
+                 {:add-new-threads? add-new-threads?
+                  :groups-to-skip groups-to-skip
+                  :thread-specific bps}))))
+
+(defn set-bp-locations [sym locations thread-args]
   (check-ns-loaded sym)
-  (let [bps (doall (map create-bp locations))]
-    (if (seq bps)
-      (do
-        (println (cdt-display-msg (str "bp set on " (seq locations))))
-        (swap! bp-list
-               (merge-with-exception sym) {sym (BpSpec. locations bps)}))
-      false)))
+  (when-let [bps (create-bps locations thread-args)]
+    (println (cdt-display-msg (str "bp set on " (seq locations))))
+    (swap! bp-list
+           (merge-with-exception sym) {sym bps})))
 
 (defn set-bp-sym [sym]
   (let [methods (get-methods sym)]
-    (when-not (set-bp-locations sym (map #(.location %) methods))
+    (when-not (set-bp-locations sym (map #(.location %) methods) [])
       (println "no methods found for" sym))))
 
 (defmacro set-bp
@@ -545,14 +579,14 @@
     (.locationsOfLine class line)
     (catch com.sun.jdi.AbsentInformationException _ [])))
 
-(defn line-bp [fname line]
+(defn line-bp [fname line & thread-args]
   (check-unexpected-exception
    (let [c (get-class fname)
          sym (symbol (str c ":" line))
          classes (filter #(re-find (append-dollar fname c) (.name %))
                          (.allClasses (vm)))
          locations (mapcat (partial get-locations line) classes)]
-     (when-not (set-bp-locations sym locations)
+     (when-not (set-bp-locations sym locations thread-args)
        (println (cdt-display-msg (str "No breakpoints found at line: " line)))))))
 
 (defn delete-bp-fn [sym]
