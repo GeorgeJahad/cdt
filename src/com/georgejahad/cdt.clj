@@ -424,6 +424,14 @@
   (doseq [t (vals @step-list) s (vals t)]
     (.setEnabled s false)))
 
+;; bp list struct
+;; {sym {:all bps
+;;       :add-new? true
+;;       :groups-to-skip []
+;;       :thread-specific
+;;         {t1 bps
+;; 	    t2 bps}}}
+
 (defonce bp-list (atom {}))
 
 (defn merge-with-exception [sym]
@@ -479,7 +487,7 @@
              (let [bps (map create-bp locations)]
                (when (seq bps)
                  (doseq [bp bps]
-                   (set-thread-filter t bp)
+                   (set-thread-filter bp t)
                    (.setEnabled bp true))
                  [t bps])))))
 
@@ -589,8 +597,14 @@
      (when-not (set-bp-locations sym locations thread-args)
        (println (cdt-display-msg (str "No breakpoints found at line: " line)))))))
 
+(defn thread-event-seq [list thread]
+  (mapcat #(get (:thread-specific (val %)) thread) @list))
+
+(defn sym-event-seq [sym list]
+  (conj (vals (:thread-specific (@list sym))) (:all (@list sym))))
+
 (defn delete-bp-fn [sym]
-  (doseq [bp (:bps (@bp-list sym))]
+  (doseq [bps (sym-event-seq sym bp-list) bp bps]
     (.setEnabled bp false)
     (.deleteEventRequest (.eventRequestManager (vm)) bp))
   (swap! bp-list dissoc sym))
@@ -600,8 +614,8 @@
   `(delete-bp-fn '~sym))
 
 (defn enable-all-breakpoints [thread type]
-  (doseq [bps @bp-list bp (:thread-specific (val bps))]
-    (.setEnabled (get bp thread) type)))
+  (doseq [bp (thread-event-seq bp-list thread)]
+    (.setEnabled bp type)))
 
 (defn delete-all-breakpoints []
   (doseq [bps @bp-list]
