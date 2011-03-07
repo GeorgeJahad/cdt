@@ -20,7 +20,8 @@
 
 (declare reval-ret* reval-ret-str reval-ret-obj
          disable-stepping show-data update-step-list print-frame
-         unmunge delete-bp-fn remote-create-str step-list)
+         unmunge delete-bp-fn remote-create-str step-list get-thread
+         create-thread-bp valid-thread? bp-list)
 
 ;; add-classpath is ugly, but handles the fact that tools.jar and
 ;; sa-jdi.jar are platform dependencies that I can't easily put in a
@@ -70,8 +71,10 @@
 (defn vm [] @vm-data)
 
 (defn main-thread-groups []
-  (let [top (.topLevelThreadGroups (vm))]
-    (concat top (mapcat #(.threadGroups %) top))))
+  (let [top (.topLevelThreadGroups (vm))
+        next (mapcat #(.threadGroups %) top)
+        next2 (mapcat #(.threadGroups %) next)]
+    (concat top next next2)))
 
 (defn continue-vm []
   (.resume (vm)))
@@ -248,9 +251,29 @@
 
 (def new-thread (atom nil))
 
+(defn add-thread? [thread map-entry]
+  (and (:add-new-threads? (val map-entry))
+       (valid-thread? thread (:groups-to-skip (val map-entry)))))
+
+(defn merge-thread-specific [full-map thread-specific-map]
+  (merge-with #(merge-with merge %1 %2)
+              full-map thread-specific-map))
+
+(defn add-thread-bp [thread sym]
+  (let [bps (doall (map (partial create-thread-bp thread)
+                        (:locations (@bp-list sym))))]
+    (swap! bp-list
+           merge-thread-specific 
+           {sym
+            {:thread-specific
+             {thread bps}}})))
+
 (defn default-thread-start-handler [e]
-  (reset! new-thread (.thread e))
-  (println "\n\nThread started" e "hit\n\n"))
+  (let [thread (get-thread e)]
+    (reset! new-thread thread)
+    (doseq [sym @bp-list :when (add-thread? thread sym)]
+      (add-thread-bp thread (key sym)))
+    (println "\n\nThread started" e "hit\n\n")))
 
 (defn handle-event [e]
   (Thread/yield)
@@ -269,19 +292,32 @@
   (set-handler method-entry-handler default-method-entry-handler)
   (set-handler thread-start-handler default-thread-start-handler))
 
-(defn get-thread [#^LocatableEvent e]
+(defmulti get-thread (fn [e] (type e)))
+
+(defmethod get-thread ThreadStartEvent [#^ThreadStartEvent e]
+  (.thread e))
+
+(defmethod get-thread LocatableEvent [#^LocatableEvent e]
   (.thread e))
 
 (defn get-thread-from-id [id]
   (first (filter #(= id (.uniqueID %)) (list-threads))))
 
+(defn stop-thread-after-event [e]
+  (set-current-frame 0)
+  (println "gbj-setting" (get-thread e))
+  (set-current-thread (get-thread e))
+  (disable-stepping)
+  (print-current-location (ct) (cf)))
+
+(defn resume-thread-after-event [e]
+  (continue-thread (get-thread e)))
+
 (defn finish-set [s]
   (let [e (first (iterator-seq (.eventIterator s)))]
-    (set-current-frame 0)
-    (println "gbj-setting" (get-thread e))
-    (set-current-thread (get-thread e))
-    (disable-stepping)
-    (print-current-location (ct) (cf))))
+    (if (instance? ThreadStartEvent e)
+      (resume-thread-after-event e)
+      (stop-thread-after-event e))))
 
 (defonce event-handler-exceptions (atom []))
 
@@ -426,8 +462,9 @@
 
 ;; bp list struct
 ;; {sym {:all bps
-;;       :add-new? true
+;;       :add-new-threads? true
 ;;       :groups-to-skip []
+;;       :locations locations
 ;;       :thread-specific
 ;;         {t1 bps
 ;; 	    t2 bps}}}
@@ -440,7 +477,7 @@
      (fn [a b] (delete-bp-fn sym) b)
      m1 m2)))
 
-(defn create-thread-start-break []
+(defn create-thread-start-request []
   (doto (.createThreadStartRequest
          (.eventRequestManager (vm)))
     (.setSuspendPolicy EventRequest/SUSPEND_EVENT_THREAD)
@@ -482,13 +519,16 @@
 (defn valid-thread? [thread groups-to-skip]
   (not-any? #(= % (.threadGroup thread)) groups-to-skip))
 
+(defn create-thread-bp [thread location]
+  (let [bp (create-bp location)]
+    (set-thread-filter bp thread)
+    (.setEnabled bp true)
+    bp))
+
 (defn create-thread-bps [locations thread-list groups-to-skip]
   (into {} (for [t thread-list :when (valid-thread? t groups-to-skip)]
-             (let [bps (map create-bp locations)]
+             (let [bps (doall (map (partial create-thread-bp t) locations))]
                (when (seq bps)
-                 (doseq [bp bps]
-                   (set-thread-filter bp t)
-                   (.setEnabled bp true))
                  [t bps])))))
 
 (defmulti create-bps (fn [locations thread-args] (count thread-args)))
@@ -497,7 +537,8 @@
              (when (seq bps)
                (doseq [bp bps]
                  (.setEnabled bp true))
-               {:all bps})))
+               {:all bps
+                :locations locations})))
 
 (defmethod create-bps 3 [locations thread-args]
            (let [[thread-list groups-to-skip add-new-threads?]
@@ -506,6 +547,7 @@
                                           thread-list groups-to-skip)]
                (when (seq bps)
                  {:add-new-threads? add-new-threads?
+                  :locations locations
                   :groups-to-skip groups-to-skip
                   :thread-specific bps}))))
 
