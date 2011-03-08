@@ -70,11 +70,12 @@
 
 (defn vm [] @vm-data)
 
-(defn main-thread-groups []
-  (let [top (.topLevelThreadGroups (vm))
-        next (mapcat #(.threadGroups %) top)
-        next2 (mapcat #(.threadGroups %) next)]
-    (concat top next next2)))
+(defn all-thread-groups []
+  (loop [groups (into #{} (.topLevelThreadGroups (vm)))]
+    (let [next-groups (into groups (mapcat #(.threadGroups %) groups))]
+      (if (= groups next-groups)
+        groups
+        (recur next-groups)))))
 
 (defn continue-vm []
   (.resume (vm)))
