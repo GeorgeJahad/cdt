@@ -93,7 +93,6 @@
   (update-step-list thread))
 
 (defn clear-current-thread []
-  (println "gbj clearing")
   (reset! current-thread nil))
 
 (defn set-current-thread-num [thread-num]
@@ -335,7 +334,6 @@
 
 (defn stop-thread-after-event [e]
   (set-current-frame 0)
-  (println "gbj-setting" (get-thread e))
   (set-current-thread (get-thread e))
   (disable-stepping)
   (print-current-location (ct) (cf)))
@@ -836,9 +834,8 @@
 
 (defn convert-primitives [thread frame-num p]
   (if-let [f (conversion-map (type p))]
-    (do (println "gbj testing pconv")
-      (f thread frame-num p))
-    (do (println "gbj not testing pconf") p)))
+    (f thread frame-num p)
+    p))
 
 (defn add-local-to-map [thread frame-num m l]
   (let [val (convert-primitives thread frame-num (val l))]
