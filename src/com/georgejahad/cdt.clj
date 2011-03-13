@@ -21,7 +21,7 @@
 (declare reval-ret* reval-ret-str reval-ret-obj
          disable-stepping show-data update-step-list print-frame
          unmunge delete-bp-fn remote-create-str step-list get-thread
-         create-thread-bp valid-thread? bp-list)
+         create-thread-bp valid-thread? bp-list create-thread-catch)
 
 ;; add-classpath is ugly, but handles the fact that tools.jar and
 ;; sa-jdi.jar are platform dependencies that I can't easily put in a
@@ -260,20 +260,49 @@
   (merge-with #(merge-with merge %1 %2)
               full-map thread-specific-map))
 
-(defn add-thread-bp [thread sym]
-  (let [bps (doall (map (partial create-thread-bp thread)
-                        (:locations (@bp-list sym))))]
-    (swap! bp-list
+;; bp list struct
+;; {sym {:all bps
+;;       :add-new-threads? true
+;;       :groups-to-skip []
+;;       :locations locations
+;;       :thread-specific
+;;         {t1 bps
+;; 	    t2 bps}}}
+
+(defonce bp-list (atom {}))
+(defonce catch-list (atom {}))
+
+(defmulti make-thread-event
+  (fn [list thread sym] list))
+
+(defmethod make-thread-event bp-list
+  [list thread sym]
+  (doall (map (partial create-thread-bp thread)
+                   (:locations (@bp-list sym)))))
+
+(defmethod make-thread-event catch-list
+  [list thread sym]
+  (let [{:keys [ref-type caught uncaught]}
+        (@catch-list sym)]
+    (create-thread-catch thread ref-type caught uncaught)))
+
+(defn add-thread-event [list thread sym]
+  (let [event (make-thread-event list thread sym)]
+    (swap! list
            merge-thread-specific 
            {sym
             {:thread-specific
-             {thread bps}}})))
+             {thread event}}})))
+
+(defn add-thread-events [list thread]
+  (doseq [map-entry @list :when (add-thread? thread map-entry)]
+    (add-thread-event list thread (key map-entry))))
 
 (defn default-thread-start-handler [e]
   (let [thread (get-thread e)]
     (reset! new-thread thread)
-    (doseq [sym @bp-list :when (add-thread? thread sym)]
-      (add-thread-bp thread (key sym)))
+    (add-thread-events bp-list thread)
+    (add-thread-events catch-list thread)
     (println "\n\nThread started" e "hit\n\n")))
 
 (defn handle-event [e]
@@ -461,17 +490,6 @@
   (doseq [t (vals @step-list) s (vals t)]
     (.setEnabled s false)))
 
-;; bp list struct
-;; {sym {:all bps
-;;       :add-new-threads? true
-;;       :groups-to-skip []
-;;       :locations locations
-;;       :thread-specific
-;;         {t1 bps
-;; 	    t2 bps}}}
-
-(defonce bp-list (atom {}))
-
 (defn merge-with-exception [sym]
   (fn [m1 m2]
     (merge-with
@@ -513,9 +531,9 @@
               (str "Namespace "
                    ns " not loaded; bp can not be set until it is."))))))
 
-(defn set-thread-filter [bp thread]
+(defn set-thread-filter [event thread]
   (call-method com.sun.tools.jdi.EventRequestManagerImpl$ThreadVisibleEventRequestImpl
-               'addThreadFilter [com.sun.jdi.ThreadReference] bp thread))
+               'addThreadFilter [com.sun.jdi.ThreadReference] event thread))
 
 (defn valid-thread? [thread groups-to-skip]
   (not-any? #(= % (.threadGroup thread)) groups-to-skip))
@@ -532,29 +550,26 @@
                (when (seq bps)
                  [t bps])))))
 
-(defmulti create-bps (fn [locations thread-args] (count thread-args)))
-(defmethod create-bps 0 [locations thread-args]
-           (let [bps (map create-bp locations)]
-             (when (seq bps)
-               (doseq [bp bps]
-                 (.setEnabled bp true))
-               {:all bps
-                :locations locations})))
-
-(defmethod create-bps 3 [locations thread-args]
-           (let [[thread-list groups-to-skip add-new-threads?]
-                 thread-args]
-             (let [bps (create-thread-bps locations
-                                          thread-list groups-to-skip)]
-               (when (seq bps)
-                 {:add-new-threads? add-new-threads?
-                  :locations locations
-                  :groups-to-skip groups-to-skip
-                  :thread-specific bps}))))
+(defn create-bps
+  ([locations]
+     (let [bps (map create-bp locations)]
+       (when (seq bps)
+         (doseq [bp bps]
+           (.setEnabled bp true))
+         {:all bps
+          :locations locations})))
+  ([locations thread-list groups-to-skip add-new-threads?]
+     (let [bps (create-thread-bps locations
+                                  thread-list groups-to-skip)]
+       (when (seq bps)
+         {:add-new-threads? add-new-threads?
+          :locations locations
+          :groups-to-skip groups-to-skip
+          :thread-specific bps}))))
 
 (defn set-bp-locations [sym locations thread-args]
   (check-ns-loaded sym)
-  (when-let [bps (create-bps locations thread-args)]
+  (when-let [bps (apply create-bps locations thread-args)]
     (println (cdt-display-msg (str "bp set on " (seq locations))))
     (swap! bp-list
            (merge-with-exception sym) {sym bps})))
@@ -644,7 +659,9 @@
   (mapcat #(get (:thread-specific (val %)) thread) @list))
 
 (defn sym-event-seq [sym list]
-  (conj (vals (:thread-specific (@list sym))) (:all (@list sym))))
+  (remove nil?
+          (conj (vals (:thread-specific (@list sym)))
+                (:all (@list sym)))))
 
 (defn delete-bp-fn [sym]
   (doseq [bps (sym-event-seq sym bp-list) bp bps]
@@ -664,26 +681,53 @@
   (doseq [bps @bp-list]
     (delete-bp-fn (key bps))))
 
-(defonce catch-list (atom {}))
+(defn create-catch-disabled
+  [ref-type caught uncaught]
+  (doto (.createExceptionRequest (.eventRequestManager (vm))
+                                 ref-type caught uncaught)
+    (.setSuspendPolicy EventRequest/SUSPEND_EVENT_THREAD)))
 
-(defn set-catch [class type]
+(defn create-thread-catch [thread ref-type caught uncaught]
+  (let [catch (create-catch-disabled ref-type caught uncaught)]
+               (set-thread-filter catch thread)
+               (.setEnabled catch true)
+               catch))
+
+(defn create-thread-catches [ref-type caught uncaught thread-list groups-to-skip]
+  (into {} (for [t thread-list :when (valid-thread? t groups-to-skip)]
+             [t (create-thread-catch t ref-type caught uncaught)])))
+
+(defn create-catch
+  ([ref-type caught uncaught]
+     {:all
+      (doto (create-catch-disabled ref-type caught uncaught)
+        (.setEnabled true))})
+  ([ref-type caught uncaught thread-list groups-to-skip add-new-threads?]
+     {:add-new-threads? add-new-threads?
+      :groups-to-skip groups-to-skip
+      :thread-specific
+      (create-thread-catches ref-type caught uncaught
+                             thread-list groups-to-skip)}))
+
+(defn set-catch [class type & thread-args]
   (let [caught (boolean (#{:all :caught} type))
         uncaught (boolean (#{:all :uncaught} type))
         pattern (re-pattern (str (second (.split (str class) " " )) "$"))
         ref-type (first (find-classes pattern))
-        catch-request
-        (doto (.createExceptionRequest (.eventRequestManager (vm))
-                                       ref-type caught uncaught)
-          (.setSuspendPolicy EventRequest/SUSPEND_EVENT_THREAD)
-          (.setEnabled true))]
-    (swap! catch-list assoc class catch-request)
+        catch (apply create-catch ref-type
+                     caught uncaught thread-args)
+        catch (merge catch
+                     {:ref-type ref-type
+                      :caught caught
+                      :uncaught uncaught})]
+    (swap! catch-list assoc class catch)
     (println "catch set on" class)))
 
 (defn delete-catch [class]
-  (let [catch-request (@catch-list class)]
-    (.setEnabled catch-request false)
-    (.deleteEventRequest (.eventRequestManager (vm)) catch-request)
-    (swap! catch-list dissoc class)))
+  (doseq [catch (sym-event-seq class catch-list)]
+    (.setEnabled catch false)
+    (.deleteEventRequest (.eventRequestManager (vm)) catch))
+  (swap! catch-list dissoc class))
 
 (defn create-disabled-str [form]
   (let [s (.mirrorOf (vm) (str form))]
