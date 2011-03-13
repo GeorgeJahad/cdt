@@ -115,7 +115,8 @@
   (let [s (if (and thread (.isSuspended thread))
             " "
             " not ")]
-    (println (cdt-display-msg (str "Status of current thread is " s " suspended.")))))
+    (println (cdt-display-msg
+              (str "Status of current thread is " s " suspended.")))))
 
 (defonce source-path (atom ""))
 (defonce prefix-path (atom ""))
@@ -194,7 +195,8 @@
        (println (cdt-display-msg "command can only be run after stopping at a breakpoint or exception"))
        (remote-create-str "IncompatibleThreadStateException"))))
 
-(defn source-not-found [] (cdt-display-msg "Source not found; check @source-path"))
+(defn source-not-found [] (cdt-display-msg
+                           "Source not found; check @source-path"))
 
 (defn print-current-location [thread frame-num]
   (try
@@ -266,7 +268,7 @@
 ;;       :locations locations
 ;;       :thread-specific
 ;;         {t1 bps
-;; 	    t2 bps}}}
+;;          t2 bps}}}
 
 (defonce bp-list (atom {}))
 (defonce catch-list (atom {}))
@@ -288,7 +290,7 @@
 (defn add-thread-event [list thread sym]
   (let [event (make-thread-event list thread sym)]
     (swap! list
-           merge-thread-specific 
+           merge-thread-specific
            {sym
             {:thread-specific
              {thread event}}})))
@@ -465,7 +467,7 @@
                                 StepRequest/STEP_LINE StepRequest/STEP_INTO)
             :over  (create-step thread
                                 StepRequest/STEP_LINE StepRequest/STEP_OVER)
-            :finish (create-step thread 
+            :finish (create-step thread
                                  StepRequest/STEP_LINE StepRequest/STEP_OUT)})))
 
 (defn do-step [thread type]
@@ -530,8 +532,9 @@
                    ns " not loaded; bp can not be set until it is."))))))
 
 (defn set-thread-filter [event thread]
-  (call-method com.sun.tools.jdi.EventRequestManagerImpl$ThreadVisibleEventRequestImpl
-               'addThreadFilter [com.sun.jdi.ThreadReference] event thread))
+  (call-method
+   com.sun.tools.jdi.EventRequestManagerImpl$ThreadVisibleEventRequestImpl
+   'addThreadFilter [com.sun.jdi.ThreadReference] event thread))
 
 (defn valid-thread? [thread groups-to-skip]
   (not-any? #(= % (.threadGroup thread)) groups-to-skip))
@@ -651,7 +654,8 @@
                          (.allClasses (vm)))
          locations (mapcat (partial get-locations line) classes)]
      (when-not (set-bp-locations sym locations thread-args)
-       (println (cdt-display-msg (str "No breakpoints found at line: " line)))))))
+       (println (cdt-display-msg
+                 (str "No breakpoints found at line: " line)))))))
 
 (defn thread-event-seq [list thread]
   (mapcat #(get (:thread-specific (val %)) thread) @list))
@@ -691,7 +695,8 @@
                (.setEnabled catch true)
                catch))
 
-(defn create-thread-catches [ref-type caught uncaught thread-list groups-to-skip]
+(defn create-thread-catches
+  [ref-type caught uncaught thread-list groups-to-skip]
   (into {} (for [t thread-list :when (valid-thread? t groups-to-skip)]
              [t (create-thread-catch t ref-type caught uncaught)])))
 
@@ -739,7 +744,8 @@
 
 (defn remote-create-str [form]
   (if-let [s (first (remove nil?
-                            (take 10 (repeatedly #(create-disabled-str form)))))]
+                            (take 10 (repeatedly
+                                      #(create-disabled-str form)))))]
     s
     (throw (IllegalStateException. "object collected 10 times"))))
 
@@ -782,7 +788,8 @@
     (.endsWith name ".clj")
     (do
       (println "source name unavailable")
-      (-> (get-frame thread frame-num) .location .method .name (.endsWith "nvoke")))))
+      (-> (get-frame thread frame-num) .location
+          .method .name (.endsWith "nvoke")))))
 
 (def default-regex
      #"(^const__\d*$|^__meta$|^__var__callsite__\d*$|^__site__\d*__$|^__thunk__\d*__$)")
@@ -849,12 +856,13 @@
   (or @cdt-sym
       (reset! cdt-sym
               (symbol (read-string
-                       (str (reval-ret-str thread frame-num `(gensym "cdt-") false)))))))
+                       (str (reval-ret-str thread frame-num
+                                           `(gensym "cdt-") false)))))))
 
 (defn gen-locals-and-closures
   ([thread frame-num]
      (let [frame (.frame thread frame-num)
-           locals #_(fix-values (.getValues frame (-> frame .location .method .variables))) (fix-values (.getValues frame (.visibleVariables frame)))]
+           locals (fix-values (.getValues frame (-> frame .location .method .variables))) (fix-values (.getValues frame (.visibleVariables frame)))]
        (merge locals (gen-closure-map thread frame-num)))))
 
 (defn add-locals-to-map [thread frame-num]
@@ -903,8 +911,10 @@
 (defn reval-ret*
   [thread frame-num return-str? form locals?]
   (check-incompatible-state
-   (let [form (if-not locals? form (gen-form-with-locals thread frame-num form))]
-     (gen-remote-form-and-eval thread (gen-form thread frame-num form return-str?)))))
+   (let [form (if-not locals? form
+                      (gen-form-with-locals thread frame-num form))]
+     (gen-remote-form-and-eval thread
+                               (gen-form thread frame-num form return-str?)))))
 
 (defn reval-ret-str
   [thread frame-num form locals?]
@@ -927,17 +937,19 @@
           (into []))))
 
 (defn locals [thread frame-num]
-  (dorun (map #(println %1 %2)
-              (local-names thread frame-num)
-              (read-string (fixup-string-reference-impl
-                            (reval-ret-str thread frame-num
-                                           (local-names thread frame-num) true))))))
+  (dorun
+   (map #(println %1 %2)
+        (local-names thread frame-num)
+        (read-string (fixup-string-reference-impl
+                      (reval-ret-str thread frame-num
+                                     (local-names thread frame-num) true))))))
 
 (defn print-frame
   ([thread frame-num]
      (let [f (get-frame thread frame-num)
            l (.location f)
-           ln (try (str (local-names thread frame-num)) (catch Exception e "[]"))
+           ln (try (str (local-names thread frame-num))
+                   (catch Exception e "[]"))
            fname (get-file-name f)
            c (.name (.declaringType (.method l)))]
        (printf "%3d %s %s %s %s:%d\n" frame-num c (.name (.method l))
@@ -952,7 +964,8 @@
   ([thread frame-num]
      (let [f (get-frame thread frame-num)
            l (.location f)
-           ln (try (str (local-names thread frame-num)) (catch Exception e "[]"))
+           ln (try (str (local-names thread frame-num))
+                   (catch Exception e "[]"))
            fname (get-file-name f)
            c (.name (.declaringType (.method l)))]
        (format "%s %s %s %s:%d" c (.name (.method l))
@@ -1003,14 +1016,16 @@
     (mapcat #(.instances % 0) (mapcat find-classes regexes))))
 
 (defn create-var-from-objs [thread frame-num ns sym coll-form add-fn objs]
-  (let [v (reval-ret-obj thread frame-num `(intern  '~ns '~sym ~coll-form) false)
+  (let [v (reval-ret-obj thread frame-num
+                         `(intern  '~ns '~sym ~coll-form) false)
         new-vec (reduce add-fn (remote-get thread v) objs)]
     (remote-swap-root thread v (make-arg-list new-vec))
     v))
 
 (defn create-instance-seq [thread frame-num ns sym & classes]
   (let [instances (get-instances classes)]
-    (create-var-from-objs thread frame-num ns sym '[] add-obj-to-vec instances)))
+    (create-var-from-objs thread frame-num ns sym
+                          '[] add-obj-to-vec instances)))
 
 (defn is-contained? [ls container]
   #_(if (= (type container) clojure.lang.LazySeq)
