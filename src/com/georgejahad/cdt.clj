@@ -862,7 +862,7 @@
 (defn gen-locals-and-closures
   ([thread frame-num]
      (let [frame (.frame thread frame-num)
-           locals (fix-values (.getValues frame (-> frame .location .method .variables))) (fix-values (.getValues frame (.visibleVariables frame)))]
+           locals #_(fix-values (.getValues frame (-> frame .location .method .variables))) (fix-values (.getValues frame (.visibleVariables frame)))]
        (merge locals (gen-closure-map thread frame-num)))))
 
 (defn add-locals-to-map [thread frame-num]
@@ -1046,3 +1046,4 @@
 
 (start-handling-break)
 (add-break-thread!)
+
