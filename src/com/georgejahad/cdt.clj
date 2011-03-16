@@ -306,6 +306,9 @@
     (add-thread-events catch-list thread)
     (println "\n\nThread started" e "hit\n\n")))
 
+(defn exception-event? [e]
+  (instance? ExceptionEvent e))
+
 (defn handle-event [e]
   (Thread/yield)
   (condp #(instance? %1 %2) e
