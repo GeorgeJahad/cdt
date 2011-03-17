@@ -13,13 +13,6 @@
         [alex-and-georges.debug-repl])
   (:import java.lang.management.ManagementFactory))
 
-(defn cdt-attach-core []
-  (reset! conn-data (first (get-connectors #"SADebugServerAttachingConnector")))
-  (let [args (.defaultArguments (conn))]
-    (println args)
-    (.setValue (.get args "debugServerName") "localhost")
-    (reset! vm-data (.attach (conn) args))))
-
 (defn cdt-attach
   ([port] (cdt-attach "localhost" port))
   ([hostname port]
@@ -30,7 +23,7 @@
        (reset! vm-data (.attach (conn) args))
        (start-event-handler))))
 
-(defn get-pid []
+(defn- get-pid []
   (first (.split (.getName
                   (ManagementFactory/getRuntimeMXBean)) "@")))
 
@@ -43,6 +36,15 @@
        (reset! vm-data (.attach (conn) args))
        (start-event-handler))))
 
+;; still experimental
+(defn cdt-attach-core []
+  (reset! conn-data (first (get-connectors #"SADebugServerAttachingConnector")))
+  (let [args (.defaultArguments (conn))]
+    (println args)
+    (.setValue (.get args "debugServerName") "localhost")
+    (reset! vm-data (.attach (conn) args))))
+
+;; still experimental
 (defn cdt-detach []
   (.dispose (vm))
   (reset! CDT-DISPLAY-MSG false)
@@ -51,7 +53,7 @@
 
 (defmacro set-bp
   [sym]
-  `(set-bp-sym '~sym))
+  `(cdt.break/set-bp-sym '~sym))
 
 (defn print-frame
   ([thread frame-num]
@@ -96,7 +98,7 @@
      (doseq [frame-num (range (count (.frames thread)))]
        (print-frame thread frame-num))))
 
-(defn get-frame-string
+(defn- get-frame-string
   ([thread frame-num]
      (let [f (get-frame thread frame-num)
            l (.location f)
@@ -121,7 +123,3 @@
 (defn reval-display [thread frame-num form]
   (-> (safe-reval thread frame-num form true read-string)
       string-nil cdt-display-msg println))
-
-(start-handling-break)
-(add-break-thread!)
-
