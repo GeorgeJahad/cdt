@@ -8,8 +8,6 @@
 
 (ns cdt.core
   (:use (cdt utils events reval)
-        [clojure.contrib.repl-utils :only
-         [start-handling-break add-break-thread!]]
         [alex-and-georges.debug-repl])
   (:import java.lang.management.ManagementFactory))
 

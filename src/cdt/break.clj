@@ -1,8 +1,6 @@
 (ns cdt.break
   (:use cdt.utils
-        cdt.events
-        ;; needed because of http://www.assembla.com/spaces/clojure/tickets/259
-        [clojure.contrib.reflect :only [call-method]])
+        cdt.events)
   (:require [clojure.string :as str])
   (:import java.io.File
            com.sun.jdi.request.EventRequest

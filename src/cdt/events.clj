@@ -1,7 +1,5 @@
 (ns cdt.events
-  (:use cdt.utils
-        ;; needed because of http://www.assembla.com/spaces/clojure/tickets/259
-        [clojure.contrib.reflect :only [call-method]])
+  (:use cdt.utils)
   (:import com.sun.jdi.request.EventRequest
            com.sun.jdi.event.BreakpointEvent
            com.sun.jdi.event.ExceptionEvent
@@ -61,6 +59,17 @@
 
 (defonce bp-list (atom {}))
 (defonce catch-list (atom {}))
+
+;; stolen from clojure.contrib.reflect; not using it from there because
+;;  clojure 1.3 contrib is layed out differently and i haven't figured
+;;  out the proper dependency management yet.
+;; needed because of http://www.assembla.com/spaces/clojure/tickets/259
+(defn call-method
+  [klass method-name params obj & args]
+  (-> klass (.getDeclaredMethod (name method-name)
+                                (into-array Class params))
+      (doto (.setAccessible true))
+      (.invoke obj (into-array Object args))))
 
 (defn set-thread-filter [event thread]
   (call-method
