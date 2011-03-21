@@ -50,8 +50,8 @@
   (stop-event-handler))
 
 (defmacro set-bp
-  [sym]
-  `(cdt.break/set-bp-sym '~sym))
+  [sym & thread-args]
+  `(cdt.break/set-bp-sym '~sym ~thread-args))
 
 (defn print-frame
   ([thread frame-num]

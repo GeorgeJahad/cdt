@@ -71,9 +71,9 @@
     (swap! bp-list
            (merge-with-exception sym) {sym bps})))
 
-(defn set-bp-sym [sym]
+(defn set-bp-sym [sym thread-args]
   (let [methods (get-methods sym)]
-    (when-not (set-bp-locations sym (map #(.location %) methods) [])
+    (when-not (set-bp-locations sym (map #(.location %) methods) thread-args)
       (println "no methods found for" sym))))
 
 
