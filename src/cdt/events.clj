@@ -283,6 +283,8 @@
                              thread-list groups-to-skip)}))
 
 (defn set-catch [class type & thread-args]
+  (when (@catch-list class)
+    (throw (IllegalArgumentException. (str "catch already exists for " class))))
   (let [caught (boolean (#{:all :caught} type))
         uncaught (boolean (#{:all :uncaught} type))
         pattern (re-pattern (str (second (.split (str class) " " )) "$"))
