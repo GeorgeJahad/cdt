@@ -288,15 +288,18 @@
   (let [caught (boolean (#{:all :caught} type))
         uncaught (boolean (#{:all :uncaught} type))
         pattern (re-pattern (str (second (.split (str class) " " )) "$"))
-        ref-type (first (find-classes pattern))
-        catch (apply create-catch ref-type
-                     caught uncaught thread-args)
-        catch (merge catch
-                     {:ref-type ref-type
-                      :caught caught
-                      :uncaught uncaught})]
-    (swap! catch-list assoc class catch)
-    (println "catch set on" class)))
+        ref-type (first (find-classes pattern))]
+    (when-not ref-type
+      (throw (IllegalArgumentException.
+              (str "No reference type found for " class))))
+    (let [catch (apply create-catch ref-type
+                       caught uncaught thread-args)
+          catch (merge catch
+                       {:ref-type ref-type
+                        :caught caught
+                        :uncaught uncaught})]
+      (swap! catch-list assoc class catch)
+      (println "catch set on" class))))
 
 (defn delete-catch [class]
   (doseq [catch (sym-event-seq class catch-list)]
