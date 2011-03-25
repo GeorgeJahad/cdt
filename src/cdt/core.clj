@@ -121,3 +121,7 @@
 (defn reval-display [thread frame-num form]
   (-> (safe-reval thread frame-num form true read-string)
       string-nil cdt-display-msg println))
+
+(defmacro bg [& body]
+  `(.start (Thread.
+            (fn[] (binding [*ns* ~*ns*] (eval '(do ~@body)))))))
