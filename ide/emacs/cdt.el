@@ -60,7 +60,7 @@
   (setq comint-prompt-regexp "^[^ ]*=>")
 
   (setq paragraph-start comint-prompt-regexp)
-  (gud-call "(use 'com.georgejahad.cdt)")
+  (gud-call "(use 'cdt.core 'cdt.utils 'cdt.events 'cdt.break)")
   (gud-call "(reset! CDT-DISPLAY-MSG true)")
   (gud-call (format "(set-source-path \"%s\")" cdt-source-path))
   (gud-call (format "(cdt-attach %s)" port))
