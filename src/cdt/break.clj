@@ -71,6 +71,14 @@
     (swap! bp-list
            (merge-with-exception sym) {sym bps})))
 
+(defn- gen-class-pattern [sym]
+  (let [s (munge-sym sym)]
+    (re-pattern (str "^" s "$"))))
+
+(defn- get-methods [sym]
+  (for [c (find-classes (gen-class-pattern sym))
+        m (regex-filter #"(invoke|doInvoke)" (.methods c))] m))
+
 (defn set-bp-sym [sym thread-args]
   (let [methods (get-methods sym)]
     (when-not (set-bp-locations sym (map #(.location %) methods) thread-args)

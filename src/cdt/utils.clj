@@ -13,7 +13,7 @@
 
 (import  com.sun.jdi.Bootstrap)
 
-(defn- regex-filter [regex seq]
+(defn regex-filter [regex seq]
   (filter #(re-find regex (.name %)) seq))
 
 (defn get-connectors [regex]
@@ -159,17 +159,8 @@
   (let [[ns sym] (.split (str sym) "/")]
     (str (Compiler/munge ns) "\\$" (Compiler/munge (str sym)))))
 
-(defn gen-class-pattern [sym]
-  (let [s (munge-sym sym)]
-    (re-pattern (str "^" s))))
-
-(defn get-methods [sym]
-  (for [c (find-classes (gen-class-pattern sym))
-        m (regex-filter #"(invoke|doInvoke)" (.methods c))] m))
-
 (def unmunge-seq
      (reverse (sort-by second compare clojure.lang.Compiler/CHAR_MAP)))
 
 (defn unmunge [n]
   (reduce (fn[n [k v]] (str/replace n v (str k))) n unmunge-seq))
-
