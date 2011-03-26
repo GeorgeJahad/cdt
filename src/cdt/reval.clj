@@ -1,6 +1,6 @@
 (ns cdt.reval
-  (:use cdt.utils
-        cdt.break)
+  (:require [cdt.utils :as cdtu]
+            [cdt.break :as cdtb])
   (:import java.util.ArrayList
            java.io.File
            com.sun.jdi.IncompatibleThreadStateException
@@ -9,26 +9,26 @@
 
 (declare reval-ret-obj reval-ret-str)
 
-(def rt (memoize #(first (find-classes #"clojure.lang.RT$"))))
+(def rt (memoize #(first (cdtu/find-classes #"clojure.lang.RT$"))))
 
-(def co (memoize #(first (find-classes #"clojure.lang.Compiler$"))))
+(def co (memoize #(first (cdtu/find-classes #"clojure.lang.Compiler$"))))
 
-(def va (memoize #(first (find-classes #"clojure.lang.Var$"))))
+(def va (memoize #(first (cdtu/find-classes #"clojure.lang.Var$"))))
 
-(def rstring (memoize #(first (find-methods (rt) #"readString$"))))
+(def rstring (memoize #(first (cdtu/find-methods (rt) #"readString$"))))
 
-(def as (memoize #(first (find-methods (rt) #"assoc$"))))
+(def as (memoize #(first (cdtu/find-methods (rt) #"assoc$"))))
 
-(def cj (memoize #(first (find-methods (rt) #"conj$"))))
+(def cj (memoize #(first (cdtu/find-methods (rt) #"conj$"))))
 
-(def ev (memoize #(first (find-methods (co) #"eval$"))))
+(def ev (memoize #(first (cdtu/find-methods (co) #"eval$"))))
 
-(def ge (memoize #(first (find-methods (va) #"get$"))))
+(def ge (memoize #(first (cdtu/find-methods (va) #"get$"))))
 
-(def sroot (memoize #(first (find-methods (va) #"swapRoot$"))))
+(def sroot (memoize #(first (cdtu/find-methods (va) #"swapRoot$"))))
 
 (defn create-disabled-str [form]
-  (let [s (.mirrorOf (vm) (str form))]
+  (let [s (.mirrorOf (cdtu/vm) (str form))]
     ;; NEED TO RE-ENABLE SOMEWHERE!
     (try
       (.disableCollection s)
@@ -74,7 +74,7 @@
     (last  (.split sp File/separator))))
 
 (defn get-source-name [thread frame-num]
-  (try (-> (get-frame thread frame-num)
+  (try (-> (cdtu/get-frame thread frame-num)
            .location
            .sourceName) (catch Exception e nil)))
 
@@ -83,7 +83,7 @@
     (.endsWith name ".clj")
     (do
       (println "source name unavailable")
-      (-> (get-frame thread frame-num) .location
+      (-> (cdtu/get-frame thread frame-num) .location
           .method .name (.endsWith "nvoke")))))
 
 (def default-regex
@@ -102,7 +102,7 @@
              fields #_(.allFields (.declaringType (.location frame)))))))))
 
 (defn fix-values [values]
-  (into {} (for [[k v] values] [(unmunge (.name k)) v])))
+  (into {} (for [[k v] values] [(cdtu/unmunge (.name k)) v])))
 
 (defn gen-closure-map
   ([thread frame-num]
@@ -178,7 +178,7 @@
     `(let ~(gen-local-bindings (get-cdt-sym thread frame-num) locals) ~form)))
 
 (defn- current-type [thread frame-num]
-  (-> (get-frame thread frame-num)
+  (-> (cdtu/get-frame thread frame-num)
       .location
       .declaringType))
 
@@ -187,7 +187,7 @@
       .name
       (.split  "\\$")
       first
-      unmunge
+      cdtu/unmunge
       symbol))
 
 (defn setup-namespace [thread frame-num form]
@@ -216,7 +216,7 @@
   `(try
      ~@body
      (catch IncompatibleThreadStateException e#
-       (println (cdt-display-msg
+       (println (cdtu/cdt-display-msg
                  (str "command can only be run after "
                       "stopping at a breakpoint or exception")))
        (remote-create-str "IncompatibleThreadStateException"))))
@@ -259,18 +259,28 @@
 
 (defmacro with-breakpoints-disabled [thread & body]
   `(try
-     (enable-all-breakpoints ~thread false)
+     (cdtb/enable-all-breakpoints ~thread false)
      ~@body
      (finally
-      (enable-all-breakpoints ~thread true))))
+      (cdtb/enable-all-breakpoints ~thread true))))
 
 (defn safe-reval [thread frame-num form locals? convert-fn]
-  (check-unexpected-exception
+  (cdtu/check-unexpected-exception
    (with-breakpoints-disabled thread
      (let [s (reval-ret-str thread frame-num form locals?)]
        (try
          (convert-fn (fixup-string-reference-impl s))
          (catch Exception e (println-str (str s))))))))
+
+(defmacro reval
+  ([thread frame-num form]
+     `(reval ~thread ~frame-num ~form true))
+  ([thread frame-num form locals?]
+     `(safe-reval ~thread ~frame-num '~form true read-string)))
+
+(defn reval-display [thread frame-num form]
+  (-> (safe-reval thread frame-num form true read-string)
+      cdtu/string-nil cdtu/cdt-display-msg println))
 
 (defn add-obj-to-vec [thread v obj]
   (remote-conj
@@ -281,7 +291,7 @@
 
 (defn get-instances [classes]
   (let [regexes (map gen-class-regex classes)]
-    (mapcat #(.instances % 0) (mapcat find-classes regexes))))
+    (mapcat #(.instances % 0) (mapcat cdtu/find-classes regexes))))
 
 (defn create-var-from-objs [thread frame-num ns sym coll-form add-fn objs]
   (let [v (reval-ret-obj thread frame-num

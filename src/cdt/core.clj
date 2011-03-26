@@ -7,19 +7,22 @@
 ;; You must not remove this notice, or any other, from this software.
 
 (ns cdt.core
-  (:use (cdt utils events reval)
-        [alex-and-georges.debug-repl])
+  (:require [cdt.utils :as cdtu]
+            [cdt.events :as cdte]
+            [cdt.break :as cdtb]
+            [cdt.reval :as cdtr])
+  (:use alex-and-georges.debug-repl)
   (:import java.lang.management.ManagementFactory))
 
 (defn cdt-attach
   ([port] (cdt-attach "localhost" port))
   ([hostname port]
-     (reset! conn-data (first (get-connectors #"SocketAttach")))
-     (let [args (.defaultArguments (conn))]
+     (reset! cdtu/conn-data (first (cdtu/get-connectors #"SocketAttach")))
+     (let [args (.defaultArguments (cdtu/conn))]
        (.setValue (.get args "port") port)
        (.setValue (.get args "hostname") hostname)
-       (reset! vm-data (.attach (conn) args))
-       (start-event-handler))))
+       (reset! cdtu/vm-data (.attach (cdtu/conn) args))
+       (cdte/start-event-handler))))
 
 (defn- get-pid []
   (first (.split (.getName
@@ -28,68 +31,65 @@
 (defn cdt-attach-pid
   ([] (cdt-attach-pid (get-pid)))
   ([pid]
-     (reset! conn-data (first (get-connectors #"ProcessAttach")))
-     (let [args (.defaultArguments (conn))]
+     (reset! cdtu/conn-data (first (cdtu/get-connectors #"ProcessAttach")))
+     (let [args (.defaultArguments (cdtu/conn))]
        (.setValue (.get args "pid") pid)
-       (reset! vm-data (.attach (conn) args))
-       (start-event-handler))))
+       (reset! cdtu/vm-data (.attach (cdtu/conn) args))
+       (cdte/start-event-handler))))
 
 ;; still experimental
 (defn cdt-attach-core []
-  (reset! conn-data (first (get-connectors #"SADebugServerAttachingConnector")))
-  (let [args (.defaultArguments (conn))]
+  (reset! cdtu/conn-data (first (cdtu/get-connectors
+                                 #"SADebugServerAttachingConnector")))
+  (let [args (.defaultArguments (cdtu/conn))]
     (println args)
     (.setValue (.get args "debugServerName") "localhost")
-    (reset! vm-data (.attach (conn) args))))
+    (reset! cdtu/vm-data (.attach (cdtu/conn) args))))
 
 ;; still experimental
 (defn cdt-detach []
-  (.dispose (vm))
-  (reset! CDT-DISPLAY-MSG false)
-  (reset! step-list {})
-  (stop-event-handler))
-
-(defmacro set-bp
-  [sym & thread-args]
-  `(cdt.break/set-bp-sym '~sym ~thread-args))
+  (.dispose (cdtu/vm))
+  (reset! cdtu/CDT-DISPLAY-MSG false)
+  (reset! cdte/step-list {})
+  (cdte/stop-event-handler))
 
 (defn print-frame
   ([thread frame-num]
-     (let [f (get-frame thread frame-num)
+     (let [f (cdtu/get-frame thread frame-num)
            l (.location f)
-           ln (try (str (local-names thread frame-num))
+           ln (try (str (cdtr/local-names thread frame-num))
                    (catch Exception e "[]"))
-           fname (get-file-name f)
+           fname (cdtr/get-file-name f)
            c (.name (.declaringType (.method l)))]
        (printf "%3d %s %s %s %s:%d\n" frame-num c (.name (.method l))
                ln fname (.lineNumber l)))))
 
 (defn print-current-location [thread frame-num]
   (try
-    (check-incompatible-state
-     (let [line (.lineNumber (.location (get-frame thread frame-num)))]
-       (if-let [{:keys [name jar]} (get-source thread frame-num)]
+    (cdtr/check-incompatible-state
+     (let [line (.lineNumber (.location (cdtu/get-frame thread frame-num)))]
+       (if-let [{:keys [name jar]} (cdtu/get-source thread frame-num)]
          (let [s (format "%s:%d:%d:" name line frame-num)
                s (if jar (str s jar) s)]
            (println "CDT location is" s)
            (print-frame thread frame-num))
-         (println (source-not-found)))))
-    (catch Exception _ (println (source-not-found)))))
+         (println (cdtu/source-not-found)))))
+    (catch Exception _ (println (cdtu/source-not-found)))))
 
 (defn up [thread frame-num]
   (let [max (dec (count (.frames thread)))]
     (if (< frame-num max)
       (let [new-frame-num (inc frame-num)]
-        (scf new-frame-num)
+        (cdtu/scf new-frame-num)
         (print-current-location thread new-frame-num))
-      (println (cdt-display-msg "already at top of stack")))))
+      (println (cdtu/cdt-display-msg "already at top of stack")))))
 
 (defn down [thread frame-num]
   (if (> frame-num 0)
     (let [new-frame-num (dec frame-num)]
-      (scf new-frame-num)
+      (cdtu/scf new-frame-num)
       (print-current-location thread new-frame-num))
-    (println (cdt-display-msg "already at bottom of stack"))))
+    (println (cdtu/cdt-display-msg "already at bottom of stack"))))
 
 (defn print-frames
   ([thread]
@@ -98,11 +98,11 @@
 
 (defn- get-frame-string
   ([thread frame-num]
-     (let [f (get-frame thread frame-num)
+     (let [f (cdtu/get-frame thread frame-num)
            l (.location f)
-           ln (try (str (local-names thread frame-num))
+           ln (try (str (cdtr/local-names thread frame-num))
                    (catch Exception e "[]"))
-           fname (get-file-name f)
+           fname (cdtr/get-file-name f)
            c (.name (.declaringType (.method l)))]
        (format "%s %s %s %s:%d" c (.name (.method l))
                ln fname (.lineNumber l)))))
@@ -112,16 +112,30 @@
      (for [frame-num (range (count (.frames thread)))]
        (get-frame-string thread frame-num))))
 
-(defmacro reval
-  ([thread frame-num form]
-     `(reval ~thread ~frame-num ~form true))
-  ([thread frame-num form locals?]
-     `(safe-reval ~thread ~frame-num '~form true read-string)))
-
-(defn reval-display [thread frame-num form]
-  (-> (safe-reval thread frame-num form true read-string)
-      string-nil cdt-display-msg println))
-
 (defmacro bg [& body]
   `(.start (Thread.
             (fn[] (binding [*ns* ~*ns*] (eval '(do ~@body)))))))
+
+(defmacro expose [& vars-to-expose]
+  `(do
+     ~@(for [var vars-to-expose]
+         (let [var-name (symbol (second (.split (str var) "/")))]
+           `(do (def ~var-name (var-get (var ~var)))
+                (if (:macro (meta (var ~var)))
+                  (.setMacro (var ~var-name))))))))
+
+(expose cdtu/conn cdtu/vm cdtu/vm cdtu/continue-vm cdtu/list-threads cdtu/cf
+        cdtu/print-threads cdtu/all-thread-groups cdtu/get-thread-from-id
+        cdtu/cdt-display-msg cdtu/CDT-DISPLAY-MSG cdtu/continue-thread
+
+        cdte/set-handler cdte/bp-list cdte/catch-list
+        cdte/stepi cdte/step cdte/step-over cdte/finish cdte/ct cdte/set-catch
+        cdte/delete-catch cdte/get-thread-from-event cdte/exception-event?
+        cdte/exception-handler cdte/breakpoint-handler
+        cdte/step-handler cdte/create-thread-start-request
+
+        cdtb/print-bps cdtb/line-bp cdtb/delete-all-breakpoints cdtb/set-bp
+        cdtb/delete-bp
+
+        cdtr/locals cdtr/safe-reval cdtr/reval cdtr/reval-display)
+

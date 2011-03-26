@@ -48,6 +48,9 @@
 (defn list-threads []
   (.allThreads (vm)))
 
+(defn get-thread-from-id [id]
+  (first (filter #(= id (.uniqueID %)) (list-threads))))
+
 (defonce current-frame (atom 0))
 
 (defn set-current-frame [frame-num]

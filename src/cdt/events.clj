@@ -1,5 +1,5 @@
 (ns cdt.events
-  (:use cdt.utils)
+  (:require [cdt.utils :as cdtu])
   (:import com.sun.jdi.request.EventRequest
            com.sun.jdi.event.BreakpointEvent
            com.sun.jdi.event.ExceptionEvent
@@ -78,7 +78,7 @@
 
 (defn- create-catch-disabled
   [ref-type caught uncaught]
-  (doto (.createExceptionRequest (.eventRequestManager (vm))
+  (doto (.createExceptionRequest (.eventRequestManager (cdtu/vm))
                                  ref-type caught uncaught)
     (.setSuspendPolicy EventRequest/SUSPEND_EVENT_THREAD)))
 
@@ -109,16 +109,16 @@
   (doseq [map-entry @list :when (add-thread? thread map-entry)]
     (add-thread-event list thread (key map-entry))))
 
-(defmulti get-thread (fn [e] (type e)))
+(defmulti get-thread-from-event (fn [e] (type e)))
 
-(defmethod get-thread ThreadStartEvent [#^ThreadStartEvent e]
+(defmethod get-thread-from-event ThreadStartEvent [#^ThreadStartEvent e]
   (.thread e))
 
-(defmethod get-thread LocatableEvent [#^LocatableEvent e]
+(defmethod get-thread-from-event LocatableEvent [#^LocatableEvent e]
   (.thread e))
 
 (defn- default-thread-start-handler [e]
-  (let [thread (get-thread e)]
+  (let [thread (get-thread-from-event e)]
     (reset! new-thread thread)
     (add-thread-events bp-list thread)
     (add-thread-events catch-list thread)
@@ -144,14 +144,11 @@
   (set-handler method-entry-handler default-method-entry-handler)
   (set-handler thread-start-handler default-thread-start-handler))
 
-(defn get-thread-from-id [id]
-  (first (filter #(= id (.uniqueID %)) (list-threads))))
-
 (defonce step-list (atom {}))
 
 (defn- create-step [thread width depth]
   (doto (.createStepRequest
-         (.eventRequestManager (vm)) thread
+         (.eventRequestManager (cdtu/vm)) thread
          width depth)
     (.setSuspendPolicy EventRequest/SUSPEND_EVENT_THREAD)
     (.setEnabled false)))
@@ -171,7 +168,7 @@
 
 (defn- do-step [thread type]
   (.setEnabled ((@step-list thread) type) true)
-  (continue-thread thread))
+  (cdtu/continue-thread thread))
 
 (defn stepi [thread]
   (do-step thread :stepi))
@@ -199,21 +196,21 @@
   (reset! current-thread nil))
 
 (defn- set-current-thread-num [thread-num]
-  (set-current-thread (nth (list-threads) thread-num)))
+  (set-current-thread (nth (cdtu/list-threads) thread-num)))
 
 (def sct set-current-thread-num)
 
 (defn ct [] @current-thread)
 
 (defn- stop-thread-after-event [e]
-  (set-current-frame 0)
-  (set-current-thread (get-thread e))
+  (cdtu/set-current-frame 0)
+  (set-current-thread (get-thread-from-event e))
   (disable-stepping)
   ;;GBJ FIX!
 #_  (print-current-location (ct) (cf)))
 
 (defn- resume-thread-after-event [e]
-  (continue-thread (get-thread e)))
+  (cdtu/continue-thread (get-thread-from-event e)))
 
 (defn- finish-set [s]
   (let [e (first (iterator-seq (.eventIterator s)))]
@@ -227,7 +224,7 @@
   `(try
      ~@body
      (catch Exception e#
-       (println (cdt-display-msg (str "exception in event handler "
+       (println (cdtu/cdt-display-msg (str "exception in event handler "
                                       e# ". You may need to restart CDT")))
        (swap! event-handler-exceptions conj e#)
        (Thread/sleep 5000))))
@@ -235,8 +232,8 @@
 (defonce event-handler-done (atom false))
 
 (defn- handle-events []
-  (println (cdt-display-msg "CDT ready"))
-  (let [q (.eventQueue (vm))]
+  (println (cdtu/cdt-display-msg "CDT ready"))
+  (let [q (.eventQueue (cdtu/vm))]
     (while (not @event-handler-done)
       (handle-event-exceptions
        (let [s (.remove q)]
@@ -256,7 +253,7 @@
 
 (defn create-thread-start-request []
   (doto (.createThreadStartRequest
-         (.eventRequestManager (vm)))
+         (.eventRequestManager (cdtu/vm)))
     (.setSuspendPolicy EventRequest/SUSPEND_EVENT_THREAD)
     (.setEnabled true)))
 
@@ -288,7 +285,7 @@
   (let [caught (boolean (#{:all :caught} type))
         uncaught (boolean (#{:all :uncaught} type))
         pattern (re-pattern (str (second (.split (str class) " " )) "$"))
-        ref-type (first (find-classes pattern))]
+        ref-type (first (cdtu/find-classes pattern))]
     (when-not ref-type
       (throw (IllegalArgumentException.
               (str "No reference type found for " class))))
@@ -304,5 +301,5 @@
 (defn delete-catch [class]
   (doseq [catch (sym-event-seq class catch-list)]
     (.setEnabled catch false)
-    (.deleteEventRequest (.eventRequestManager (vm)) catch))
+    (.deleteEventRequest (.eventRequestManager (cdtu/vm)) catch))
   (swap! catch-list dissoc class))
