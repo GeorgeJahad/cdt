@@ -61,6 +61,8 @@
 (defn cf [] @current-frame)
 
 (defonce CDT-DISPLAY-MSG (atom false))
+(defn set-display-msg [val]
+  (reset! CDT-DISPLAY-MSG val))
 
 (defn cdt-display-msg [s]
   (condp = @CDT-DISPLAY-MSG

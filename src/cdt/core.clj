@@ -126,16 +126,17 @@
 
 (expose cdtu/conn cdtu/vm cdtu/vm cdtu/continue-vm cdtu/list-threads cdtu/cf
         cdtu/print-threads cdtu/all-thread-groups cdtu/get-thread-from-id
-        cdtu/cdt-display-msg cdtu/CDT-DISPLAY-MSG cdtu/continue-thread
+        cdtu/cdt-display-msg cdtu/set-display-msg cdtu/continue-thread
 
         cdte/set-handler cdte/bp-list cdte/catch-list
         cdte/stepi cdte/step cdte/step-over cdte/finish cdte/ct cdte/set-catch
         cdte/delete-catch cdte/get-thread-from-event cdte/exception-event?
         cdte/exception-handler cdte/breakpoint-handler
         cdte/step-handler cdte/create-thread-start-request
+        cdte/set-catch-exclusion-filter-strings
 
         cdtb/print-bps cdtb/line-bp cdtb/delete-all-breakpoints cdtb/set-bp
-        cdtb/delete-bp
+        cdtb/set-bp-sym cdtb/delete-bp
 
         cdtr/locals cdtr/safe-reval cdtr/reval cdtr/reval-display)
 
