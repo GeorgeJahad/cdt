@@ -82,11 +82,22 @@
                                  ref-type caught uncaught)
     (.setSuspendPolicy EventRequest/SUSPEND_EVENT_THREAD)))
 
+(defn set-catch-exclusion-filter [catch s]
+  (call-method
+   com.sun.tools.jdi.EventRequestManagerImpl$ClassVisibleEventRequestImpl
+   'addClassExclusionFilter [java.lang.String] catch s))
+
+(def catch-exclusion-filter-strings (atom nil))
+(defn set-catch-exclusion-filter-strings [& strings]
+  (reset! catch-exclusion-filter-strings strings))
+
 (defn- create-thread-catch [thread ref-type caught uncaught]
   (let [catch (create-catch-disabled ref-type caught uncaught)]
-               (set-thread-filter catch thread)
-               (.setEnabled catch true)
-               catch))
+    (set-thread-filter catch thread)
+    (doseq [s @catch-filter-strings]
+      (set-catch-exclusion-filter catch s))
+    (.setEnabled catch true)
+    catch))
 
 (defmulti make-thread-event
   (fn [list thread sym] list))
