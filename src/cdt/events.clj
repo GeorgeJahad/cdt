@@ -94,7 +94,7 @@
 (defn- create-thread-catch [thread ref-type caught uncaught]
   (let [catch (create-catch-disabled ref-type caught uncaught)]
     (set-thread-filter catch thread)
-    (doseq [s @catch-filter-strings]
+    (doseq [s @catch-exclusion-filter-strings]
       (set-catch-exclusion-filter catch s))
     (.setEnabled catch true)
     catch))
@@ -132,8 +132,7 @@
   (let [thread (get-thread-from-event e)]
     (reset! new-thread thread)
     (add-thread-events bp-list thread)
-    (add-thread-events catch-list thread)
-    (println "\n\nThread started" e "hit\n\n")))
+    (add-thread-events catch-list thread)))
 
 (defn exception-event? [e]
   (instance? ExceptionEvent e))
@@ -238,14 +237,21 @@
        (println (cdtu/cdt-display-msg (str "exception in event handler "
                                       e# ". You may need to restart CDT")))
        (swap! event-handler-exceptions conj e#)
-       (Thread/sleep 5000))))
+       ;; throttle exception messages a bit
+       (Thread/sleep 500))))
 
-(defonce event-handler-done (atom false))
+(defonce event-handler-state (atom :not-started))
+(defonce event-handler-promise (promise))
+
+(defn event-handler-started? []
+   @event-handler-promise)
 
 (defn- handle-events []
+  (deliver event-handler-promise true)
+  (reset! event-handler-state :started)
   (println (cdtu/cdt-display-msg "CDT ready"))
   (let [q (.eventQueue (cdtu/vm))]
-    (while (not @event-handler-done)
+    (while (not (= @event-handler-state :stop))
       (handle-event-exceptions
        (let [s (.remove q)]
          (doseq [i (iterator-seq (.eventIterator s))]
@@ -254,12 +260,12 @@
 
 (defonce event-handler (atom nil))
 (defn stop-event-handler []
-  (reset! event-handler-done true))
+  (reset! event-handler-state :stop))
 
 (defn start-event-handler []
   (setup-handlers)
   (reset! event-handler (Thread. handle-events "CDT Event Handler"))
-  (reset! event-handler-done false)
+  (reset! event-handler-state false)
   (.start @event-handler))
 
 (defn create-thread-start-request []
