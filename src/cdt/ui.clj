@@ -6,7 +6,7 @@
 ;; the terms of this license.
 ;; You must not remove this notice, or any other, from this software.
 
-(ns cdt.core
+(ns cdt.ui
   (:require [cdt.utils :as cdtu]
             [cdt.events :as cdte]
             [cdt.break :as cdtb]
