@@ -5,6 +5,8 @@
 ;; By using this software in any fashion, you are agreeing to be bound by
 ;; the terms of this license.
 ;; You must not remove this notice, or any other, from this software.
+;; Contributors:
+;; Travis Vachon
 
 (ns cdt.ui
   (:require [cdt.utils :as cdtu]
@@ -13,6 +15,8 @@
             [cdt.reval :as cdtr])
   (:use alex-and-georges.debug-repl)
   (:import java.lang.management.ManagementFactory))
+
+(def cdt-release "1.2.6a")
 
 (defn cdt-attach
   ([port] (cdt-attach "localhost" port))

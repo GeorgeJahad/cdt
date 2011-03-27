@@ -1,3 +1,13 @@
+;; Copyright (c) George Jahad. All rights reserved.
+;; The use and distribution terms for this software are covered by the
+;; Eclipse Public License 1.0 (http://opensource.org/licenses/eclipse-1.0.php)
+;; which can be found in the file COPYING at the root of this distribution.
+;; By using this software in any fashion, you are agreeing to be bound by
+;; the terms of this license.
+;; You must not remove this notice, or any other, from this software.
+;; Contributors:
+;; Travis Vachon
+
 (ns cdt.utils
   (:require [clojure.string :as str])
   (:import java.io.File
@@ -6,10 +16,12 @@
 ;; add-classpath is ugly, but handles the fact that tools.jar and
 ;; sa-jdi.jar are platform dependencies that I can't easily put in a
 ;; repo:
-(with-out-str (add-classpath (format "file:///%s/../lib/tools.jar"
-                                     (System/getProperty "java.home"))))
-(with-out-str (add-classpath (format "file:///%s/../lib/sa-jdi.jar"
-                                     (System/getProperty "java.home"))))
+(try
+  (with-out-str (add-classpath (format "file:///%s/../lib/tools.jar"
+                                       (System/getProperty "java.home"))))
+  (with-out-str (add-classpath (format "file:///%s/../lib/sa-jdi.jar"
+                                       (System/getProperty "java.home"))))
+  (catch java.lang.IllegalAccessError e))
 
 (import  com.sun.jdi.Bootstrap)
 
