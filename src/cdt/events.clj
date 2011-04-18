@@ -227,6 +227,14 @@
   (set-current-thread (get-thread-from-event e))
   (disable-stepping)
   ;;GBJ FIX!
+  (let [frame-num 0
+        thread (get-thread-from-event e)
+        line (.lineNumber (.location (cdtu/get-frame thread frame-num)))]
+    (if-let [{:keys [name jar]} (cdtu/get-source thread frame-num)]
+      (let [s (format "%s:%d:%d:" name line frame-num)
+            s (if jar (str s jar) s)]
+        (println "CDT location is" s))
+      (println (cdtu/source-not-found))))
 #_  (print-current-location (ct) (cf)))
 
 (defn- resume-thread-after-event [e]
