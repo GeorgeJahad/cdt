@@ -60,9 +60,10 @@
   (setq comint-prompt-regexp "^[^ ]*=>")
 
   (setq paragraph-start comint-prompt-regexp)
-  (gud-call "(use 'cdt.core 'cdt.utils 'cdt.events 'cdt.break)")
-  (gud-call "(reset! CDT-DISPLAY-MSG true)")
-  (gud-call (format "(set-source-path \"%s\")" cdt-source-path))
+;  (gud-call "(use 'cdt.ui 'cdt.utils 'cdt.events 'cdt.break)")
+  (gud-call "(do (use 'cdt.ui) (require '[cdt.utils :as cdtu]))")
+  (gud-call "(reset! cdtu/CDT-DISPLAY-MSG true)")
+  (gud-call (format "(cdtu/set-source-path \"%s\")" cdt-source-path))
   (gud-call (format "(cdt-attach %s)" port))
   (run-hooks 'jdb-mode-hook))
 
