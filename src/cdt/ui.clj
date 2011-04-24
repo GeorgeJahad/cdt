@@ -13,10 +13,9 @@
             [cdt.events :as cdte]
             [cdt.break :as cdtb]
             [cdt.reval :as cdtr])
-  (:use alex-and-georges.debug-repl)
   (:import java.lang.management.ManagementFactory))
 
-(def cdt-release "1.2.6a")
+(def cdt-release "1.2.6b")
 
 (defn cdt-attach
   ([port] (cdt-attach "localhost" port))

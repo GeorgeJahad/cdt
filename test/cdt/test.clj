@@ -1,5 +1,5 @@
 (ns cdt.test
-  (:use [cdt utils events break reval core] :reload-all)
+  (:use [cdt ui] :reload-all)
   (:use [clojure.test])
   (:import java.util.concurrent.CountDownLatch
            java.util.concurrent.TimeUnit
