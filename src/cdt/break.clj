@@ -145,7 +145,11 @@
 (defn- get-locations [line class]
   (try
     (.locationsOfLine class line)
-    (catch com.sun.jdi.AbsentInformationException _ [])))
+    (catch Exception e 
+           (if (= (type (.getCause e))
+                  com.sun.jdi.AbsentInformationException)
+             []
+             (throw e)))))
 
 (defn line-bp [fname line & thread-args]
   (cdtu/check-unexpected-exception
