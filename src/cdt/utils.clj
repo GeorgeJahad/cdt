@@ -13,18 +13,6 @@
   (:import java.io.File
            clojure.lang.Compiler))
 
-;; add-classpath is ugly, but handles the fact that tools.jar and
-;; sa-jdi.jar are platform dependencies that I can't easily put in a
-;; repo:
-(try
-  (with-out-str (add-classpath (format "file:///%s/../lib/tools.jar"
-                                       (System/getProperty "java.home"))))
-  (with-out-str (add-classpath (format "file:///%s/../lib/sa-jdi.jar"
-                                       (System/getProperty "java.home"))))
-  (catch java.lang.IllegalAccessError e
-    (println "warning: unabled to add tools.jar to classpath."
-             "This may cause CDT initialization to fail.")))
-
 (import  com.sun.jdi.Bootstrap)
 
 (defn regex-filter [regex seq]
