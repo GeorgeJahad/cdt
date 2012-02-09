@@ -4,13 +4,16 @@
 
 The CDT, (Clojure Debugging Toolkit,) is a set of clojure functions/macros that use the Java Debug Interface, http://java.sun.com/javase/6/docs/jdk/api/jpda/jdi/index.html, to debug a remote vm, from a repl running on another vm.
 
+It contains a command line based debugger and library, which can be
+integrated with other GUI's, e.g. [[http://georgejahad.com/clojure/swank-cdt.html][swank-cdt]].  
+
 You can set breakpoints, catch exceptions, examine the stack
 frame/locals; what makes it unique, (afaik,) is that you can eval
 arbitrary clojure forms in the lexical scope of a suspended,
 remote-thread's stack frame.
 
 For example, if you are suspended at a stack frame that has the locals *a* and *b*,
-*(reval (+ a b))* will return their sum.
+*(reval (ct) (cf) (+ a b))* will return their sum.
 
 ** What about debug-repl?
 The debug-repl, http://github.com/georgejahad/debug-repl, 
@@ -24,15 +27,15 @@ In general it works very well, with two exceptions:
 
 2. It can be hard to  invoke from the point where an exception is thrown.
 
-For those kinds of issues I use CDT; otherwise, I still use
-debug-repl.  
+For those kinds of issues I use CDT; otherwise, I often use
+debug-repl, depending on what is more convenient.
 
 ** CDT Exception Example
 I often have trouble getting my namespace declarations right.  I do
 things like this:
 
 <example>
-user=> (ns xx (:use [clojure.contrib.pprint :only pprint]))
+user=> (ns xx (:use [clojure.pprint :only pprint]))
 java.lang.IllegalArgumentException: Don't know how to create ISeq from: clojure.lang.Symbol (NO_SOURCE_FILE:16)
 </example>
 
@@ -46,7 +49,7 @@ it, start the target repl up with these extra jvm args:
 Start up a second repl and init the debugger like so:
 
 <example>
-user=> (use 'com.georgejahad.cdt)
+user=> (use 'cdt.ui)
 nil
 user=> (cdt-attach 8030)
 nil
@@ -67,38 +70,39 @@ user=>
 Exception #<ExceptionEventImpl ExceptionEvent@clojure.lang.RT:471 in thread main> #<LocationImpl clojure.core$load_lib:4752> hit
 
 
-(print-frames)
-  0 clojure.lang.RT seqFrom [coll sc c] RT.java:471
-  1 clojure.lang.RT seq [coll] RT.java:452
-  2 clojure.core$seq invoke [coll] core.clj:122
-  3 clojure.core$refer doInvoke [ns ns_sym filters rename exclude fs nspublics to_do] core.clj:3268
-  4 clojure.lang.RestFn applyTo [args] RestFn.java:140
-  5 clojure.core$apply invoke [f x args] core.clj:542
-  6 clojure.core$load_lib doInvoke [prefix options lib opts map__4461 verbose use require reload_all reload as loaded load need_ns filter_opts] core.clj:4769
-  7 clojure.lang.RestFn applyTo [args] RestFn.java:143
+(print-frames (ct))
+  0 clojure.lang.RT seqFrom [c coll sc] RT.java:487
+  1 clojure.lang.RT seq [coll] RT.java:468
+  2 clojure.core$seq invoke [coll this] core.clj:133
+  3 clojure.core$refer doInvoke [exclude filters fs ns ns-sym nspublics rename this to-do] core.clj:3767
+  4 clojure.lang.RestFn applyTo [--site--0-- --site--1-- --site--2-- --thunk--0-- --thunk--1-- --thunk--2-- args const--0 const--1 const--10 const--11 const--12 const--13 const--14 const--15 const--16 const--17 const--18 const--19 const--2 const--20 const--21 const--22 const--23 const--24 const--25 const--26 const--27 const--28 const--29 const--3 const--30 const--4 const--5 const--6 const--7 const--8 const--9 this] RestFn.java:139
+  5 clojure.core$apply invoke [args f this x] core.clj:602
+  6 clojure.core$load_lib doInvoke [as filter-opts lib load loaded map--4561 need-ns options opts prefix reload reload-all require this use verbose] core.clj:5252
+  7 clojure.lang.RestFn applyTo [args const--0 const--1 const--10 const--11 const--12 const--13 const--14 const--15 const--16 const--17 const--18 const--19 const--2 const--20 const--21 const--22 const--23 const--24 const--25 const--26 const--27 const--28 const--29 const--3 const--30 const--31 const--32 const--33 const--34 const--35 const--36 const--37 const--38 const--39 const--4 const--40 const--41 const--42 const--43 const--44 const--45 const--46 const--47 const--48 const--49 const--5 const--50 const--51 const--52 const--53 const--54 const--55 const--56 const--6 const--7 const--8 const--9 this] RestFn.java:142
   .
   .
   .
 
-user=> (locals)
+user=> (locals (ct) (cf))
 coll pprint
 sc clojure.lang.AFn
 c clojure.lang.Symbol
 nil
-user=> (reval (type coll))
+user=> (reval (ct) (cf) (type coll))
+
 clojure.lang.Symbol
 
 </example>
 
 Suspiciously, there is a local *coll* whose value is pprint.
-*(reval (type coll))* reports it's a symbol.  Sounds like that
+*(reval (ct) (cf) (type coll))* reports it's a symbol.  Sounds like that
 could be the ISeq the exception message is complaining about.  Delete
 the catch and resume the target:
 
 <example>
 user=> (delete-catch java.lang.IllegalArgumentException )
 {}
-user=> (cont)
+user=> (continue-thread (ct))
 </example>
 
 Wrap the pprint in a vector and see that it fixes the
@@ -116,39 +120,8 @@ I'm not sure there's a workaround, but if you go up or down the stack
 frame you can sometimes find other copies of the var that actually do show its
 correct value. 
 
-** reval-println
-*reval* is written to return a valid form that can be manipulated by the
-debugger repl.  
-
-<example>
-user=> (locals)
-a [1 2]
-nil
-user=> (def remote-a-inced (map inc (reval a)))
-#'user/remote-a-inced
-user=> remote-a-inced
-(2 3)
-</example>
-
-
-Not all remote forms are readable however; for this case, use
-*reval-println* to print out the string representing the unreadable
-form, like so:
-
-<example>
-user=> (reval #(* 2 3))
-java.lang.RuntimeException: java.lang.Exception: Unreadable form (NO_SOURCE_FILE:0)
-user=> (reval-println #(* 2 3))
-"#<user$eval71$fn__72 user$eval71$fn__72@16a8823>"
-</example>
-
-
 ** Other useful commands
-*(up)* and *(down)* traverse the stack.
-
-*(local-names)* just prints
-the names of the locals and closures.  This is useful in case one
-of the locals is a long seq you don't want to print out.
+*(up (ct) (cf))* and *(down (ct) (cf))* traverse the stack.
 
 Set/delete breakpoints like so: *(set-bp clojure.core/into)*  *(delete-bp
 clojure.core/into)*
@@ -170,17 +143,19 @@ will only be correct in frame 0.
 *** Haven't tested on Windows
 Outside of the caveats mentioned above, CDT seems to work fine on Linux and OSX.
 
-** Still Undone
- stepping, modification of locals, source listings/ide integration, linenumber breakpoints, debugging local vm
-
 ** Where:
 http://github.com/georgejahad/cdt
 
 http://clojars.org/cdt
 
 ** Thanks
-To my employer Runa for supporting my Clojure habit, and to Rich for
-making all the great toys.
+To Rich for making all the great toys.
+
+YourKit is kindly supporting open source projects with its
+full-featured Java Profiler. YourKit, LLC is the creator of innovative
+and intelligent tools for profiling Java and .NET applications. Take a
+look at YourKit's leading software products: [[http://www.yourkit.com/java/profiler/index.jsp][YourKit Java Profiler]] and
+[[http://www.yourkit.com/.net/profiler/index.jsp][YourKit .NET Profiler]].
 
 ** Comments/Suggestions
 
