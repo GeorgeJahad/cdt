@@ -137,6 +137,7 @@
         cdte/exception-handler cdte/breakpoint-handler
         cdte/step-handler cdte/create-thread-start-request
         cdte/set-catch-exclusion-filter-strings cdte/event-handler-started?
+        cdte/delete-all-catches cdte/print-catches
 
         cdtb/print-bps cdtb/line-bp cdtb/delete-all-breakpoints cdtb/set-bp
         cdtb/set-bp-sym cdtb/delete-bp
