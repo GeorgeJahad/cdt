@@ -338,3 +338,11 @@
     (.setEnabled catch false)
     (.deleteEventRequest (.eventRequestManager (cdtu/vm)) catch))
   (swap! catch-list dissoc class))
+
+(defn print-catches []
+  (doseq [[n k] (keep-indexed vector (keys @catch-list))]
+    (println n k)))
+
+(defn delete-all-catches []
+  (doseq [bps @catch-list]
+    (delete-catch (key bps))))
