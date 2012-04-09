@@ -161,3 +161,5 @@ Obeying it means displaying in another window the specified file and line."
 	    (substring gud-marker-acc
 		       (- (/ (* gud-marker-acc-max-length 3) 4)))))
   (replace-regexp-in-string "CDT Display Message: " "" string))
+
+(provide 'cdt)
