@@ -209,6 +209,7 @@
 (defonce current-thread (atom nil))
 
 (defn- set-current-thread [thread]
+  (println "SETTING CURRENT THREAD")
   (reset! current-thread thread)
   (update-step-list thread))
 
@@ -235,7 +236,7 @@
             s (if jar (str s jar) s)]
         (println "CDT location is" s))
       (println (cdtu/source-not-found))))
-#_  (print-current-location (ct) (cf)))
+ #_  (print-current-location (ct) (cf)))
 
 (defn- resume-thread-after-event [e]
   (cdtu/continue-thread (get-thread-from-event e)))
@@ -253,7 +254,7 @@
      ~@body
      (catch Exception e#
        (println (cdtu/cdt-display-msg (str "exception in event handler "
-                                      e# ". You may need to restart CDT")))
+                                       e# ". You may need to restart CDT")))
        (swap! event-handler-exceptions conj e#)
        ;; throttle exception messages a bit
        (Thread/sleep 500))))
@@ -304,21 +305,23 @@
 
 (defn- create-catch
   ([ref-type caught uncaught]
-     {:all
-      (doto (create-catch-disabled ref-type caught uncaught)
-        (.setEnabled true))})
+   {:all
+    (doto (create-catch-disabled ref-type caught uncaught)
+      (.setEnabled true))})
   ([ref-type caught uncaught thread-list groups-to-skip add-new-threads?]
-     {:add-new-threads? add-new-threads?
-      :groups-to-skip groups-to-skip
-      :thread-specific
-      (create-thread-catches ref-type caught uncaught
-                             thread-list groups-to-skip)}))
+   {:add-new-threads? add-new-threads?
+    :groups-to-skip groups-to-skip
+    :thread-specific
+    (create-thread-catches ref-type caught uncaught
+                           thread-list groups-to-skip)}))
 
 (defn set-catch [class type & thread-args]
   (when (@catch-list class)
     (throw (IllegalArgumentException. (str "catch already exists for " class))))
   (let [caught (boolean (#{:all :caught} type))
         uncaught (boolean (#{:all :uncaught} type))
+        _ (println "CAUGHT: " caught)
+        _ (println "UNCAUGHT: " uncaught)
         pattern (re-pattern (str (second (.split (str class) " " )) "$"))
         ref-type (first (cdtu/find-classes pattern))]
     (when-not ref-type

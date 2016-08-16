@@ -1,4 +1,4 @@
-(defproject cdt  "1.2.6.2"
+(defproject cdt  "1.2.6.3"
   :description "Clojure Debugging Toolkit"
-  :dependencies [[org.clojure/clojure "1.3.0"]
+  :dependencies [[org.clojure/clojure "1.8.0"]
                  [org.clojars.gjahad/debug-repl "0.3.1"]])
