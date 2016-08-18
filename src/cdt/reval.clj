@@ -284,7 +284,17 @@
   (println "LOCALS: " locals-str)
   (clojure.string/replace locals-str #"(#\.*?])", "[\"$1\" $2]"))
 
+(defn print-locals [thread frame-num]
+  (dorun
+   (map #(println %1 %2)
+        (local-names thread frame-num)
+        (read-string (fixup-string-reference-impl
+                      (reval-ret-str thread frame-num
+                                     (local-names thread frame-num) true))))))
+
 (defn locals [thread frame-num]
+  (print-locals thread frame-num)
+  
   (println "NEW GET LOCALS")
   (binding [*default-data-reader-fn* data-reader]
     (let [frame (.frame thread frame-num)
@@ -303,13 +313,7 @@
               [[] []]
               (local-names thread frame-num)))))
 
-(defn print-locals [thread frame-num]
-  (dorun
-   (map #(println %1 %2)
-        (local-names thread frame-num)
-        (read-string (fixup-string-reference-impl
-                      (reval-ret-str thread frame-num
-                                     (local-names thread frame-num) true))))))
+
 
 (defmacro with-breakpoints-disabled [thread & body]
   `(try
