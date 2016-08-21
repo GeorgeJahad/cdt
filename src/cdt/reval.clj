@@ -282,7 +282,14 @@
   "Escape objects and records to prevent read-string from trying to evaluate them."
   [locals-str]
   (println "LOCALS: " locals-str)
-  (clojure.string/replace locals-str #"(#\.*?])", "[\"$1\" $2]"))
+  (clojure.string/replace locals-str #"(#.*[}\]])", "\"$1\""))
+
+(defn- value-for-local-str
+  "Returns the value for the given local as string."
+  [local-str]
+  (if (re-matches #"#.*" local-str)
+      local-str
+      (read-string local-str))) 
 
 (defn print-locals [thread frame-num]
   (dorun
@@ -293,7 +300,7 @@
                                      (local-names thread frame-num) true))))))
 
 (defn locals [thread frame-num]
-  (print-locals thread frame-num)
+  ; (print-locals thread frame-num)
   
   (println "NEW GET LOCALS")
   (binding [*default-data-reader-fn* data-reader]
@@ -302,10 +309,11 @@
           args (set (map #(.name %) (filter #(.isArgument %) vars)))]
       (println "ARGS: " args)
       (reduce (fn [[arg-vars local-vars] var]
-                  (let [cstr (fix-locals-str 
-                                (fixup-string-reference-impl 
-                                  (reval-ret-str thread frame-num var true)))
-                        value (read-string cstr)
+                  (let [cstr (fixup-string-reference-impl 
+                               (reval-ret-str thread frame-num var true))
+                        ; _ (println "CSTR: " cstr)
+                        ; value (read-string cstr)
+                        value (value-for-local-str cstr)
                         value-map {:name var :value value}]
                     (if (contains? args (str var))
                       [(conj arg-vars value-map) local-vars]
