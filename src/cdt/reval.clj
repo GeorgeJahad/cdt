@@ -10,7 +10,8 @@
 
 (ns cdt.reval
   (:require [cdt.utils :as cdtu]
-            [cdt.break :as cdtb])
+            [cdt.break :as cdtb]
+            [clojure.edn :as edn])
   (:import java.util.ArrayList
            java.io.File
            com.sun.jdi.IncompatibleThreadStateException
@@ -291,6 +292,12 @@
       local-str
       (read-string local-str))) 
 
+(defn reader
+  "Default data reader"
+  [tag value]
+  (println "CALLING DEFAULT READER FOR TAG " tag)
+  [tag value])
+
 (defn print-locals [thread frame-num]
   (dorun
    (map #(println %1 %2)
@@ -298,6 +305,22 @@
         (read-string (fixup-string-reference-impl
                       (reval-ret-str thread frame-num
                                      (local-names thread frame-num) true))))))
+
+;; Trick to handle tagged values (objects and Records) 
+;; See https://github.com/clojure-cookbook/clojure-cookbook/blob/master/04_local-io/4-17_unknown-reader-literals.asciidoc
+(defrecord TaggedValue [tag value])
+
+(defmethod print-method TaggedValue [this ^java.io.Writer w]
+   (.write w "#")
+   (print-method (:tag this) w)
+   (.write w " ")
+   (print-method (:value this) w))
+
+(defn- handle-unknown-tag [tag value]
+  [tag value])
+
+(defn read-preserving-unknown-tags [s]
+  (edn/read-string {:default handle-unknown-tag} s))
 
 (defn locals [thread frame-num]
   ; (print-locals thread frame-num)
@@ -311,9 +334,11 @@
       (reduce (fn [[arg-vars local-vars] var]
                   (let [cstr (fixup-string-reference-impl 
                                (reval-ret-str thread frame-num var true))
-                        ; _ (println "CSTR: " cstr)
-                        ; value (read-string cstr)
-                        value (value-for-local-str cstr)
+                        _ (println "CSTR: " cstr)
+                        ; value (binding [*default-data-reader-fn* reader]
+                        ;         (read-string cstr))
+                        ; value (value-for-local-str cstr)
+                        value (read-preserving-unknown-tags cstr)
                         value-map {:name var :value value}]
                     (if (contains? args (str var))
                       [(conj arg-vars value-map) local-vars]
