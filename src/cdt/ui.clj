@@ -20,12 +20,12 @@
 (defn cdt-attach
   ([port] (cdt-attach "localhost" port))
   ([hostname port]
-     (reset! cdtu/conn-data (first (cdtu/get-connectors #"SocketAttach")))
-     (let [args (.defaultArguments (cdtu/conn))]
-       (.setValue (.get args "port") port)
-       (.setValue (.get args "hostname") hostname)
-       (reset! cdtu/vm-data (.attach (cdtu/conn) args))
-       (cdte/start-event-handler))))
+   (reset! cdtu/conn-data (first (cdtu/get-connectors #"SocketAttach")))
+   (let [args (.defaultArguments (cdtu/conn))]
+     (.setValue (.get args "port") port)
+     (.setValue (.get args "hostname") hostname)
+     (reset! cdtu/vm-data (.attach (cdtu/conn) args))
+     (cdte/start-event-handler))))
 
 (defn- get-pid []
   (first (.split (.getName
@@ -34,11 +34,11 @@
 (defn cdt-attach-pid
   ([] (cdt-attach-pid (get-pid)))
   ([pid]
-     (reset! cdtu/conn-data (first (cdtu/get-connectors #"ProcessAttach")))
-     (let [args (.defaultArguments (cdtu/conn))]
-       (.setValue (.get args "pid") pid)
-       (reset! cdtu/vm-data (.attach (cdtu/conn) args))
-       (cdte/start-event-handler))))
+   (reset! cdtu/conn-data (first (cdtu/get-connectors #"ProcessAttach")))
+   (let [args (.defaultArguments (cdtu/conn))]
+     (.setValue (.get args "pid") pid)
+     (reset! cdtu/vm-data (.attach (cdtu/conn) args))
+     (cdte/start-event-handler))))
 
 ;; still experimental
 (defn cdt-attach-core []
@@ -58,14 +58,14 @@
 
 (defn print-frame
   ([thread frame-num]
-     (let [f (cdtu/get-frame thread frame-num)
-           l (.location f)
-           ln (try (str (cdtr/local-names thread frame-num))
-                   (catch Exception e "[]"))
-           fname (cdtr/get-file-name f)
-           c (.name (.declaringType (.method l)))]
-       (printf "%3d %s %s %s %s:%d\n" frame-num c (.name (.method l))
-               ln fname (.lineNumber l)))))
+   (let [f (cdtu/get-frame thread frame-num)
+         l (.location f)
+         ln (try (str (cdtr/local-names thread frame-num))
+                 (catch Exception e "[]"))
+         fname (cdtr/get-file-name f)
+         c (.name (.declaringType (.method l)))]
+     (printf "%3d %s %s %s %s:%d\n" frame-num c (.name (.method l))
+             ln fname (.lineNumber l)))))
 
 (defn print-current-location [thread frame-num]
   (try
@@ -96,24 +96,24 @@
 
 (defn print-frames
   ([thread]
-     (doseq [frame-num (range (count (.frames thread)))]
-       (print-frame thread frame-num))))
+   (doseq [frame-num (range (count (.frames thread)))]
+     (print-frame thread frame-num))))
 
 (defn- get-frame-string
   ([thread frame-num]
-     (let [f (cdtu/get-frame thread frame-num)
-           l (.location f)
-           ln (try (str (cdtr/local-names thread frame-num))
-                   (catch Exception e "[]"))
-           fname (cdtr/get-file-name f)
-           c (.name (.declaringType (.method l)))]
-       (format "%s %s %s %s:%d" c (.name (.method l))
-               ln fname (.lineNumber l)))))
+   (let [f (cdtu/get-frame thread frame-num)
+         l (.location f)
+         ln (try (str (cdtr/local-names thread frame-num))
+                 (catch Exception e "[]"))
+         fname (cdtr/get-file-name f)
+         c (.name (.declaringType (.method l)))]
+     (format "%s %s %s %s:%d" c (.name (.method l))
+             ln fname (.lineNumber l)))))
 
 (defn get-frames
   ([thread]
-     (for [frame-num (range (count (.frames thread)))]
-       (get-frame-string thread frame-num))))
+   (for [frame-num (range (count (.frames thread)))]
+     (get-frame-string thread frame-num))))
 
 (defmacro bg [& body]
   `(.start (Thread.
