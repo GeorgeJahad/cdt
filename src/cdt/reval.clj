@@ -323,12 +323,11 @@
   (edn/read-string {:default handle-unknown-tag} s))
 
 (defn locals [thread frame-num]
-  ; (print-locals thread frame-num)
-  
   (println "NEW GET LOCALS")
   (binding [*default-data-reader-fn* data-reader]
     (let [frame (.frame thread frame-num)
           vars (.visibleVariables frame)
+          _ (println "VARS FROM FRAME: " vars)
           args (set (map #(.name %) (filter #(.isArgument %) vars)))]
       (println "ARGS: " args)
       (reduce (fn [[arg-vars local-vars] var]
@@ -339,7 +338,8 @@
                         ;         (read-string cstr))
                         ; value (value-for-local-str cstr)
                         value (read-preserving-unknown-tags cstr)
-                        value-map {:name var :value value}]
+                        ; value-map {:name var :value value}]
+                        value-map {var value}]
                     (if (contains? args (str var))
                       [(conj arg-vars value-map) local-vars]
                       [arg-vars (conj local-vars value-map)])))
