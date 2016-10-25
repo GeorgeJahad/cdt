@@ -47,20 +47,20 @@
 
 (defn- create-bps
   ([locations]
-     (let [bps (map create-bp locations)]
-       (when (seq bps)
-         (doseq [bp bps]
-           (.setEnabled bp true))
-         {:all bps
-          :locations locations})))
+   (let [bps (map create-bp locations)]
+     (when (seq bps)
+       (doseq [bp bps]
+         (.setEnabled bp true))
+       {:all bps
+        :locations locations})))
   ([locations thread-list groups-to-skip add-new-threads?]
-     (let [bps (create-thread-bps locations
-                                  thread-list groups-to-skip)]
-       (when (seq bps)
-         {:add-new-threads? add-new-threads?
-          :locations locations
-          :groups-to-skip groups-to-skip
-          :thread-specific bps}))))
+   (let [bps (create-thread-bps locations
+                                thread-list groups-to-skip)]
+     (when (seq bps)
+       {:add-new-threads? add-new-threads?
+        :locations locations
+        :groups-to-skip groups-to-skip
+        :thread-specific bps}))))
 
 (defn delete-bp-fn [sym]
   (doseq [bps (cdte/sym-event-seq sym cdte/bp-list) bp bps]
@@ -176,7 +176,7 @@
 (defmethod cdte/make-thread-event cdte/bp-list
   [list thread sym]
   (doall (map (partial create-thread-bp thread)
-                   (:locations (@cdte/bp-list sym)))))
+              (:locations (@cdte/bp-list sym)))))
 
 (defmacro set-bp
   [sym & thread-args]
