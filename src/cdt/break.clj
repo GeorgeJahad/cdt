@@ -170,6 +170,8 @@
     (.setEnabled bp type)))
 
 (defn delete-all-breakpoints []
+  (println "BREAKPONINTS:")
+  (println @cdte/bp-list)
   (doseq [bps @cdte/bp-list]
     (delete-bp-fn (key bps))))
 
@@ -186,3 +188,15 @@
   [sym]
   `(delete-bp-fn '~sym))
 
+(defn delelete-breakpoints-in-file
+  [path]
+  (doseq [bps @cdte/bp-list
+          :let [bp-pattern (-> (first bps)
+                               (str/replace #"\." "/")
+                               (str/replace #":\d+$" "\\.(clj|cljs|CLJ|CLJS)")
+                               re-pattern)]]
+    (println "PATTERN: " bp-pattern)
+    (if (re-find bp-pattern path)
+      (do (println "DELETING BREAKPOINT " bps)
+          (delete-bp-fn (key bps)))
+      (println "NOT DELETING BREAKPOINT " bps))))

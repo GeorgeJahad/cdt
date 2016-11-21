@@ -140,7 +140,7 @@
         cdte/delete-all-catches cdte/print-catches
 
         cdtb/print-bps cdtb/line-bp cdtb/delete-all-breakpoints cdtb/set-bp
-        cdtb/set-bp-sym cdtb/delete-bp
+        cdtb/set-bp-sym cdtb/delete-bp cdtb/delelete-breakpoints-in-file
 
         cdtr/locals cdtr/safe-reval cdtr/reval cdtr/reval-display)
 

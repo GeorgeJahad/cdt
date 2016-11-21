@@ -230,7 +230,7 @@
      ~@body
      (catch IncompatibleThreadStateException e#
        (println (cdtu/cdt-display-msg
-                 (str "command can only be run after "
+                 (str "command " ~@body " can only be run after "
                       "stopping at a breakpoint or exception")))
        (remote-create-str "IncompatibleThreadStateException"))))
 
