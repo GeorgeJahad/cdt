@@ -146,8 +146,9 @@
   (try
     (.locationsOfLine class line)
     (catch Exception e 
-           (if (= (type (.getCause e))
-                  com.sun.jdi.AbsentInformationException)
+           (if (or (= (type (.getCause e))
+                      com.sun.jdi.AbsentInformationException)
+                   (= (type e) com.sun.jdi.AbsentInformationException))
              []
              (throw e)))))
 
