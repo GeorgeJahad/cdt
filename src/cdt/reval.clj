@@ -163,9 +163,7 @@
 
 (defn gen-locals-and-closures
   ([thread frame-num]
-   (println "THREAD: " thread)
    (let [frame (.frame thread frame-num)
-         _ (println frame)
          locals (fix-values (.getValues frame (.visibleVariables frame)))]
      (merge locals (gen-closure-map thread frame-num)))))
 
@@ -282,7 +280,6 @@
 (defn- fix-locals-str
   "Escape objects and records to prevent read-string from trying to evaluate them."
   [locals-str]
-  (println "LOCALS: " locals-str)
   (clojure.string/replace locals-str #"(#.*[}\]])", "\"$1\""))
 
 (defn- value-for-local-str
@@ -323,17 +320,13 @@
   (edn/read-string {:default handle-unknown-tag} s))
 
 (defn locals [thread frame-num]
-  (println "NEW GET LOCALS")
   (binding [*default-data-reader-fn* data-reader]
     (let [frame (.frame thread frame-num)
           vars (.visibleVariables frame)
-          _ (println "VARS FROM FRAME: " vars)
           args (set (map #(.name %) (filter #(.isArgument %) vars)))]
-      (println "ARGS: " args)
       (reduce (fn [[arg-vars local-vars] var]
                   (let [cstr (fixup-string-reference-impl 
                                (reval-ret-str thread frame-num var true))
-                        _ (println "CSTR: " cstr)
                         ; value (binding [*default-data-reader-fn* reader]
                         ;         (read-string cstr))
                         ; value (value-for-local-str cstr)

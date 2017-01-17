@@ -209,7 +209,6 @@
 (defonce current-thread (atom nil))
 
 (defn- set-current-thread [thread]
-  (println "SETTING CURRENT THREAD")
   (reset! current-thread thread)
   (update-step-list thread))
 
@@ -234,7 +233,7 @@
     (if-let [{:keys [name jar]} (cdtu/get-source thread frame-num)]
       (let [s (format "%s:%d:%d:" name line frame-num)
             s (if jar (str s jar) s)]
-        (println "CDT location is" s))
+        #_(println "CDT location is" s))
       (println (cdtu/source-not-found))))
  #_  (print-current-location (ct) (cf)))
 
@@ -320,8 +319,6 @@
     (throw (IllegalArgumentException. (str "catch already exists for " class))))
   (let [caught (boolean (#{:all :caught} type))
         uncaught (boolean (#{:all :uncaught} type))
-        _ (println "CAUGHT: " caught)
-        _ (println "UNCAUGHT: " uncaught)
         pattern (re-pattern (str (second (.split (str class) " " )) "$"))
         ref-type (first (cdtu/find-classes pattern))]
     (when-not ref-type
