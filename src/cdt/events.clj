@@ -252,8 +252,9 @@
   `(try
      ~@body
      (catch Exception e#
-       (println (cdtu/cdt-display-msg (str "exception in event handler "
-                                       e# ". You may need to restart CDT")))
+       (binding [*out* *err*]
+        (println (cdtu/cdt-display-msg (str "exception in event handler "
+                                        e# ". You may need to restart CDT"))))
        (swap! event-handler-exceptions conj e#)
        ;; throttle exception messages a bit
        (Thread/sleep 500))))
