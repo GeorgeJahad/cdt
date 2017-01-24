@@ -140,7 +140,8 @@
     (get-class* fname)
     (catch Exception e
       (println fname (cdtu/source-not-found))
-      (throw (Exception. (str fname " " (cdtu/source-not-found)))))))
+      (let [path (pr-str (doall (cdtu/gen-paths)))]
+        (throw (Exception. (str fname " PATH: "  path " - " (cdtu/source-not-found))))))))
 
 (defn- get-locations [line class]
   (try
@@ -171,8 +172,7 @@
     (.setEnabled bp type)))
 
 (defn delete-all-breakpoints []
-  (println "BREAKPONINTS:")
-  (println @cdte/bp-list)
+  ;; (println @cdte/bp-list)
   (doseq [bps @cdte/bp-list]
     (delete-bp-fn (key bps))))
 
@@ -196,8 +196,5 @@
                                (str/replace #"\." "/")
                                (str/replace #":\d+$" "\\.(clj|cljs|CLJ|CLJS)")
                                re-pattern)]]
-    (println "PATTERN: " bp-pattern)
-    (if (re-find bp-pattern path)
-      (do (println "DELETING BREAKPOINT " bps)
-          (delete-bp-fn (key bps)))
-      (println "NOT DELETING BREAKPOINT " bps))))
+    (when (re-find bp-pattern path)
+      (delete-bp-fn (key bps)))))

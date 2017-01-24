@@ -330,7 +330,10 @@
                         ; value (binding [*default-data-reader-fn* reader]
                         ;         (read-string cstr))
                         ; value (value-for-local-str cstr)
-                        value (read-preserving-unknown-tags cstr)
+                        value (try
+                                (read-preserving-unknown-tags cstr)
+                                (catch Exception e
+                                  "unparseable"))
                         ; value-map {:name var :value value}]
                         value-map {var value}]
                     (if (contains? args (str var))
