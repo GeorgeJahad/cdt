@@ -13,6 +13,7 @@
             [cdt.utils :as cdtu]
             [cdt.events :as cdte])
   (:import java.io.File
+           java.util.regex.Pattern
            com.sun.jdi.request.EventRequest
            com.sun.jdi.event.BreakpointEvent))
 
@@ -47,20 +48,20 @@
 
 (defn- create-bps
   ([locations]
-     (let [bps (map create-bp locations)]
-       (when (seq bps)
-         (doseq [bp bps]
-           (.setEnabled bp true))
-         {:all bps
-          :locations locations})))
+   (let [bps (map create-bp locations)]
+     (when (seq bps)
+       (doseq [bp bps]
+         (.setEnabled bp true))
+       {:all bps
+        :locations locations})))
   ([locations thread-list groups-to-skip add-new-threads?]
-     (let [bps (create-thread-bps locations
-                                  thread-list groups-to-skip)]
-       (when (seq bps)
-         {:add-new-threads? add-new-threads?
-          :locations locations
-          :groups-to-skip groups-to-skip
-          :thread-specific bps}))))
+   (let [bps (create-thread-bps locations
+                                thread-list groups-to-skip)]
+     (when (seq bps)
+       {:add-new-threads? add-new-threads?
+        :locations locations
+        :groups-to-skip groups-to-skip
+        :thread-specific bps}))))
 
 (defn delete-bp-fn [sym]
   (doseq [bps (cdte/sym-event-seq sym cdte/bp-list) bp bps]
@@ -107,8 +108,9 @@
   (str/replace c File/separator "."))
 
 (defn- get-file-class [fname path]
-  (second (re-find (re-pattern
-                    (str path File/separator "(.*)(.clj|.java)")) fname)))
+  (let [path-literal-regex-str (str (Pattern/quote (str path File/separator)) "(.*)(.clj|.java)")]
+    (second (re-find (re-pattern path-literal-regex-str) 
+            fname))))
 
 (defn- remove-suffix [fname]
   (first (.split fname "\\.")))
@@ -140,14 +142,16 @@
     (get-class* fname)
     (catch Exception e
       (println fname (cdtu/source-not-found))
-      (throw (Exception. (str fname " " (cdtu/source-not-found)))))))
+      (let [path (pr-str (doall (cdtu/gen-paths)))]
+        (throw (Exception. (str fname " PATH: "  path " - " (cdtu/source-not-found))))))))
 
 (defn- get-locations [line class]
   (try
     (.locationsOfLine class line)
     (catch Exception e 
-           (if (= (type (.getCause e))
-                  com.sun.jdi.AbsentInformationException)
+           (if (or (= (type (.getCause e))
+                      com.sun.jdi.AbsentInformationException)
+                   (= (type e) com.sun.jdi.AbsentInformationException))
              []
              (throw e)))))
 
@@ -170,13 +174,14 @@
     (.setEnabled bp type)))
 
 (defn delete-all-breakpoints []
+  ;; (println @cdte/bp-list)
   (doseq [bps @cdte/bp-list]
     (delete-bp-fn (key bps))))
 
 (defmethod cdte/make-thread-event cdte/bp-list
   [list thread sym]
   (doall (map (partial create-thread-bp thread)
-                   (:locations (@cdte/bp-list sym)))))
+              (:locations (@cdte/bp-list sym)))))
 
 (defmacro set-bp
   [sym & thread-args]
@@ -186,3 +191,12 @@
   [sym]
   `(delete-bp-fn '~sym))
 
+(defn delelete-breakpoints-in-file
+  [path]
+  (doseq [bps @cdte/bp-list
+          :let [bp-pattern (-> (first bps)
+                               (str/replace #"\." "/")
+                               (str/replace #":\d+$" "\\.(clj|cljs|CLJ|CLJS)")
+                               re-pattern)]]
+    (when (re-find bp-pattern path)
+      (delete-bp-fn (key bps)))))

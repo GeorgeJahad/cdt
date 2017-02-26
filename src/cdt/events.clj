@@ -233,9 +233,9 @@
     (if-let [{:keys [name jar]} (cdtu/get-source thread frame-num)]
       (let [s (format "%s:%d:%d:" name line frame-num)
             s (if jar (str s jar) s)]
-        (println "CDT location is" s))
+        #_(println "CDT location is" s))
       (println (cdtu/source-not-found))))
-#_  (print-current-location (ct) (cf)))
+ #_  (print-current-location (ct) (cf)))
 
 (defn- resume-thread-after-event [e]
   (cdtu/continue-thread (get-thread-from-event e)))
@@ -252,8 +252,9 @@
   `(try
      ~@body
      (catch Exception e#
-       (println (cdtu/cdt-display-msg (str "exception in event handler "
-                                      e# ". You may need to restart CDT")))
+       (binding [*out* *err*]
+        (println (cdtu/cdt-display-msg (str "exception in event handler "
+                                        e# ". You may need to restart CDT"))))
        (swap! event-handler-exceptions conj e#)
        ;; throttle exception messages a bit
        (Thread/sleep 500))))
@@ -304,15 +305,15 @@
 
 (defn- create-catch
   ([ref-type caught uncaught]
-     {:all
-      (doto (create-catch-disabled ref-type caught uncaught)
-        (.setEnabled true))})
+   {:all
+    (doto (create-catch-disabled ref-type caught uncaught)
+      (.setEnabled true))})
   ([ref-type caught uncaught thread-list groups-to-skip add-new-threads?]
-     {:add-new-threads? add-new-threads?
-      :groups-to-skip groups-to-skip
-      :thread-specific
-      (create-thread-catches ref-type caught uncaught
-                             thread-list groups-to-skip)}))
+   {:add-new-threads? add-new-threads?
+    :groups-to-skip groups-to-skip
+    :thread-specific
+    (create-thread-catches ref-type caught uncaught
+                           thread-list groups-to-skip)}))
 
 (defn set-catch [class type & thread-args]
   (when (@catch-list class)
