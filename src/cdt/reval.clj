@@ -10,7 +10,8 @@
 
 (ns cdt.reval
   (:require [cdt.utils :as cdtu]
-            [cdt.break :as cdtb])
+            [cdt.break :as cdtb]
+            [clojure.edn :as edn])
   (:import java.util.ArrayList
            java.io.File
            com.sun.jdi.IncompatibleThreadStateException
@@ -47,6 +48,8 @@
         (println "object collected " form)
         nil))))
 
+;; I think this is trying to catch it before it gets GC'ed and gives up if it
+;; fails ten times - crazy - jnorton
 (defn remote-create-str [form]
   (if-let [s (first (remove nil?
                             (take 10 (repeatedly
@@ -104,24 +107,24 @@
 
 (defn gen-closure-field-list
   ([thread frame-num]
-     (let [frame (.frame thread frame-num)]
-       (when-let [obj (.thisObject frame)]
-         (let [fields (.fields (.referenceType obj))]
-           (if (clojure-frame? thread frame-num)
-             (remove-default-fields fields)
-             fields #_(.allFields (.declaringType (.location frame)))))))))
+   (let [frame (.frame thread frame-num)]
+     (when-let [obj (.thisObject frame)]
+       (let [fields (.fields (.referenceType obj))]
+         (if (clojure-frame? thread frame-num)
+           (remove-default-fields fields)
+           fields #_(.allFields (.declaringType (.location frame)))))))))
 
 (defn fix-values [values]
   (into {} (for [[k v] values] [(cdtu/unmunge (.name k)) v])))
 
 (defn gen-closure-map
   ([thread frame-num]
-     (when-let [obj (.thisObject (.frame thread frame-num))]
-       (let [this-map {"this" obj}]
-         (if-let [fields (gen-closure-field-list thread frame-num)]
-           (merge this-map
-                  (fix-values (.getValues obj fields)))
-           this-map)))))
+   (when-let [obj (.thisObject (.frame thread frame-num))]
+     (let [this-map {"this" obj}]
+       (if-let [fields (gen-closure-field-list thread frame-num)]
+         (merge this-map
+                (fix-values (.getValues obj fields)))
+         this-map)))))
 
 (defn convert-type [type thread frame-num val]
   (reval-ret-obj thread frame-num (list 'new type (str val)) false))
@@ -160,11 +163,9 @@
 
 (defn gen-locals-and-closures
   ([thread frame-num]
-     (let [frame (.frame thread frame-num)
-           locals
-           #_(fix-values (.getValues frame (-> frame .location .method .variables)))
-           (fix-values (.getValues frame (.visibleVariables frame)))]
-       (merge locals (gen-closure-map thread frame-num)))))
+   (let [frame (.frame thread frame-num)
+         locals (fix-values (.getValues frame (.visibleVariables frame)))]
+     (merge locals (gen-closure-map thread frame-num)))))
 
 (defn add-locals-to-map [thread frame-num]
   (let [locals-and-closures (gen-locals-and-closures thread frame-num)
@@ -192,7 +193,7 @@
       .location
       .declaringType))
 
-(defn- get-ns [thread frame-num]
+(defn get-ns [thread frame-num]
   (-> (current-type thread frame-num)
       .name
       (.split  "\\$")
@@ -227,7 +228,7 @@
      ~@body
      (catch IncompatibleThreadStateException e#
        (println (cdtu/cdt-display-msg
-                 (str "command can only be run after "
+                 (str "command " ~@body " can only be run after "
                       "stopping at a breakpoint or exception")))
        (remote-create-str "IncompatibleThreadStateException"))))
 
@@ -253,19 +254,95 @@
 
 (defn local-names
   ([thread frame-num]
-     (->> (gen-locals-and-closures thread frame-num)
-          keys
-          (map symbol)
-          sort
-          (into []))))
+   (->> (gen-locals-and-closures thread frame-num)
+        keys
+        (map symbol)
+        sort
+        (into []))))
 
-(defn locals [thread frame-num]
+(defmulti data-reader
+ "Reader used to handle objects and records."
+ (fn [tag value] tag))
+
+(defmethod data-reader "object"
+  [tag value]
+  (str "[object " value "]"))
+
+(defmethod data-reader "record"
+  [tag value]
+  (let [key (keyword tag)]
+    {key value}))
+
+(defmethod data-reader :default
+  [tag value]
+  value)
+
+(defn- fix-locals-str
+  "Escape objects and records to prevent read-string from trying to evaluate them."
+  [locals-str]
+  (clojure.string/replace locals-str #"(#.*[}\]])", "\"$1\""))
+
+(defn- value-for-local-str
+  "Returns the value for the given local as string."
+  [local-str]
+  (if (re-matches #"#.*" local-str)
+      local-str
+      (read-string local-str))) 
+
+(defn reader
+  "Default data reader"
+  [tag value]
+  (println "CALLING DEFAULT READER FOR TAG " tag)
+  [tag value])
+
+(defn print-locals [thread frame-num]
   (dorun
    (map #(println %1 %2)
         (local-names thread frame-num)
         (read-string (fixup-string-reference-impl
                       (reval-ret-str thread frame-num
                                      (local-names thread frame-num) true))))))
+
+;; Trick to handle tagged values (objects and Records) 
+;; See https://github.com/clojure-cookbook/clojure-cookbook/blob/master/04_local-io/4-17_unknown-reader-literals.asciidoc
+(defrecord TaggedValue [tag value])
+
+(defmethod print-method TaggedValue [this ^java.io.Writer w]
+   (.write w "#")
+   (print-method (:tag this) w)
+   (.write w " ")
+   (print-method (:value this) w))
+
+(defn- handle-unknown-tag [tag value]
+  [tag value])
+
+(defn read-preserving-unknown-tags [s]
+  (edn/read-string {:default handle-unknown-tag} s))
+
+(defn locals [thread frame-num]
+  (binding [*default-data-reader-fn* data-reader]
+    (let [frame (.frame thread frame-num)
+          vars (.visibleVariables frame)
+          args (set (map #(.name %) (filter #(.isArgument %) vars)))]
+      (reduce (fn [[arg-vars local-vars] var]
+                  (let [cstr (fixup-string-reference-impl 
+                               (reval-ret-str thread frame-num var true))
+                        ; value (binding [*default-data-reader-fn* reader]
+                        ;         (read-string cstr))
+                        ; value (value-for-local-str cstr)
+                        value (try
+                                (read-preserving-unknown-tags cstr)
+                                (catch Exception e
+                                  "unparseable"))
+                        ; value-map {:name var :value value}]
+                        value-map {var value}]
+                    (if (contains? args (str var))
+                      [(conj arg-vars value-map) local-vars]
+                      [arg-vars (conj local-vars value-map)])))
+              [[] []]
+              (local-names thread frame-num)))))
+
+
 
 (defmacro with-breakpoints-disabled [thread & body]
   `(try
@@ -284,9 +361,9 @@
 
 (defmacro reval
   ([thread frame-num form]
-     `(reval ~thread ~frame-num ~form true))
+   `(reval ~thread ~frame-num ~form true))
   ([thread frame-num form locals?]
-     `(safe-reval ~thread ~frame-num '~form true read-string)))
+   `(safe-reval ~thread ~frame-num '~form true read-string)))
 
 (defn reval-display [thread frame-num form]
   (-> (safe-reval thread frame-num form true read-string)
@@ -317,7 +394,7 @@
 
 (defn is-contained? [ls container]
   #_(if (= (type container) clojure.lang.LazySeq)
-      (let [val ])))
+      (let [val]))) 
 
 (defn is-head [s ls]
   (if (some (partial is-contained? ls) s)
