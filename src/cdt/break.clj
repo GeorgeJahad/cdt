@@ -13,6 +13,7 @@
             [cdt.utils :as cdtu]
             [cdt.events :as cdte])
   (:import java.io.File
+           java.util.regex.Pattern
            com.sun.jdi.request.EventRequest
            com.sun.jdi.event.BreakpointEvent))
 
@@ -107,8 +108,9 @@
   (str/replace c File/separator "."))
 
 (defn- get-file-class [fname path]
-  (second (re-find (re-pattern
-                    (str path File/separator "(.*)(.clj|.java)")) fname)))
+  (let [path-literal-regex-str (str (Pattern/quote (str path File/separator)) "(.*)(.clj|.java)")]
+    (second (re-find (re-pattern path-literal-regex-str) 
+            fname))))
 
 (defn- remove-suffix [fname]
   (first (.split fname "\\.")))
